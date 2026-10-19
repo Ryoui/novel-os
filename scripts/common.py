@@ -168,6 +168,24 @@ def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+# 占位桩（尚未写作）章节的标记与判定阈值
+STUB_MARKERS = ("<!-- NOVEL_FLOW_STUB -->", "<!-- BEAT_SHEET_STUB -->")
+_PLACEHOLDER_LINE = re.compile(r"(?m)^\[待写\]\s*$")
+_MAX_STUB_EFFECTIVE_CHARS = 800
+
+
+def is_draft_stub_text(text: str) -> bool:
+    """判断文本是否为占位桩（骨架未写作）。
+
+    短文本里出现独占行 `[待写]` 也算桩；长正文里引用「待写」二字不判桩。
+    """
+    if any(m in text for m in STUB_MARKERS):
+        return True
+    if _PLACEHOLDER_LINE.search(text):
+        return len(re.sub(r"\s+", "", text)) <= _MAX_STUB_EFFECTIVE_CHARS
+    return False
+
+
 def count_chars(text: str, include_spaces: bool = False) -> int:
     """统计文本字符数（统一方法）。
 

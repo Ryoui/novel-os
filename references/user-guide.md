@@ -1,4 +1,4 @@
-# Novel Claude AI v1.0.0 用户指南
+# Novel OS v2.0.0 用户指南
 
 ## 目录
 
@@ -55,11 +55,13 @@ bash scripts/install-portable-skill.sh --tool claude-code --force
 
 ```
 你的小说项目/
-├── 00_memory/            # 记忆系统
+├── 00_memory/            # 记忆系统（状态追踪器全部在此）
 │   ├── novel_plan.md     # 主线计划（写前必读）
-│   ├── novel_state.md    # 当前状态
+│   ├── novel_state.md    # 当前状态（写前必读）
+│   ├── character_tracker.md / timeline.md / foreshadowing_tracker.md
+│   ├── world_state.md / style_anchor.md
 │   └── retrieval/        # 检索索引
-├── 02_knowledge_base/    # 知识库（设定+资料）
+├── 02_knowledge_base/    # 知识库（设定+资料，不放追踪器与正文）
 ├── 03_manuscript/        # 章节正文
 ├── 04_editing/           # 编辑与门禁
 └── .flow/                # 执行状态（内部）
@@ -69,7 +71,7 @@ bash scripts/install-portable-skill.sh --tool claude-code --force
 
 ## 3. 多LLM配置
 
-v8.0 支持多种大模型，你可以根据需要选择。
+本技能支持多种大模型，你可以根据需要选择。
 
 ### 配置文件
 
@@ -185,19 +187,25 @@ python3 scripts/novel_flow_executor.py one-click \
 **执行内容**（全自动串联）：
 1. RAG 检索相关章节上下文
 2. 生成/补全章节正文
-3. 更新记忆 → 检查一致性 → 风格校准 → 校稿
+3. 更新记忆 → 检查一致性 → 节奏审查 → 风格校准 → 校稿
 4. 门禁检查（passed=true 才解锁下一章）
 5. 更新检索索引
 
 **高级参数**：
 ```bash
+# 注：Bash 中续行反斜杠后不能跟注释，注释须独立成行
 python3 scripts/novel_flow_executor.py continue-write \
   --project-root ./我的小说 \
   --query "太子在朝堂上首次发言" \
-  --candidate-k 12 \          # RAG 粗筛候选数
-  --max-auto-retry-rounds 2 \ # 门禁失败自动重试次数
-  --rollback-on-failure \      # 失败时回滚
-  --auto-research              # 写前自动检测知识缺口
+  --candidate-k 12 \
+  --max-auto-retry-rounds 2 \
+  --require-semantic-pacing \
+  --auto-research
+# --candidate-k 12             RAG 粗筛候选数
+# --max-auto-retry-rounds 2    门禁失败自动重试次数
+# --require-semantic-pacing    强制要求 /节奏审查 产物，缺失即判失败
+# --auto-research              写前自动检测知识缺口（默认已开启）
+# 回滚与幂等缓存默认即开启，无需显式传参
 ```
 
 ### `/修复本章`
@@ -214,7 +222,7 @@ python3 scripts/novel_flow_executor.py continue-write \
 
 ## 5. 联网调研
 
-联网调研是 v8.0 新增的**通用能力**，在任何写作场景中都可使用。
+联网调研是**通用能力**，在任何写作场景中都可使用。
 
 ### 手动调研
 
@@ -262,12 +270,18 @@ python3 scripts/research_agent.py store \
 
 ### 知识库分类规则
 
+> ⚠️ `02_knowledge_base/` 只放设定与资料，**不放状态追踪器、不放章节正文**。
+> 角色/时间线/伏笔追踪器一律在 `00_memory/`（`novel_flow_executor.py one-click` 的实际写入位置）。
+
 | 类别关键词 | 存储文件 |
 |-----------|---------|
 | 世界观、体系、设定 | `02_knowledge_base/10_worldbuilding.md` |
 | 历史、地理、制度、背景 | `02_knowledge_base/11_research_data.md` |
 | 写作手法、风格 | `02_knowledge_base/12_style_skills.md` |
 | 其他参考、分析 | `02_knowledge_base/13_reference_materials.md` |
+| 角色状态 | `00_memory/character_tracker.md` |
+| 事件时间顺序 | `00_memory/timeline.md` |
+| 伏笔埋设与回收 | `00_memory/foreshadowing_tracker.md` |
 
 ### 与 `/继续写` 联动
 
@@ -290,7 +304,7 @@ python3 scripts/novel_flow_executor.py continue-write \
 
 ## 6. 一键写书
 
-一键写书是 v8.0 的核心新功能，用户只需提供简介和目标字数，系统全自动完成整本书。
+一键写书是全自动调度能力，用户只需提供简介和目标字数，系统自动完成整本书（当前为调度骨架，见 `references/auto-write-guide.md`）。
 
 ### 基本用法
 
@@ -332,7 +346,7 @@ python3 scripts/auto_novel_writer.py plan \
   --synopsis "穿越唐朝太子" \
   --target-chars 2000000 \
   --genre 历史 \
-  --research-depth standard
+  --research-depth deep
 ```
 
 ### 更新进度（供外部脚本调用）
@@ -349,7 +363,7 @@ python3 scripts/auto_novel_writer.py progress \
 
 ## 7. 中途改纲续写
 
-v1.0.0 新增功能，当故事写到中途需要调整主线走向时使用。
+当故事写到中途需要调整主线走向时使用。
 
 ### 什么时候需要改纲
 
@@ -474,7 +488,9 @@ python3 scripts/gate_repair_plan.py \
 ### 风格指纹
 
 ```bash
-python3 scripts/style_fingerprint.py \
+# 位置参数是样章文件（可多个），--profile-name 必填
+python3 scripts/style_fingerprint.py 03_manuscript/第1章.md 03_manuscript/第2章.md \
+  --profile-name "番茄快节奏玄幻" \
   --project-root ./我的小说
 ```
 
@@ -494,6 +510,10 @@ A: 确认安装脚本输出无错误。重启 AI 工具后重试。检查 SKILL.
 
 ### Q: 门禁一直不通过？
 A: 使用 `/修复本章` 自动修复。如果多次失败，检查 `04_editing/gate_artifacts/<章节>/gate_result.json` 查看具体失败原因。常见问题：章节字数不足、缺少对话、一致性冲突。
+
+两个最隐蔽的失败原因：
+- **"文件时间早于章节文件，疑似未执行最新流程"** —— 改动正文后必须重跑全部门禁产物（产物 mtime 必须不早于章节文件）。
+- **"quality_report.md 文件不存在"** —— 该产物只有 `continue-write` 会自动写入；手动走六步流程时必须自己生成，其中需含全角冒号的 `通过：True`。详见 `references/gate-artifacts-spec.md`。
 
 ### Q: 如何切换大模型？
 A: 修改项目根目录的 `.novel_writer_config.yaml`，更改 `ai_provider` 和 `model` 字段。确保对应的 API Key 环境变量已设置。

@@ -1,7 +1,6 @@
 # 交互式脑洞引导手册
 
-> 状态：规划中（Phase 2 实现）
-
+> 状态：已实现
 ## 目标
 
 将用户的模糊故事想法，通过结构化提问逐步拓展为完整的小说框架，同时主动联网补充世界观资料。
@@ -70,9 +69,23 @@
 - `00_memory/story_graph.json`（知识图谱初始数据）
 - `02_knowledge_base/` 下各知识库文件
 
-## 脚本入口（规划）
-
+## 脚本入口
 ```bash
-python3 scripts/interactive_ideation_engine.py \
-  --project-root <目录> --mode interactive
+# 开一轮脑洞会话
+python3 scripts/interactive_ideation_engine.py init --project-root <目录> --genre <题材> --title-hint "<书名提示>"
+
+# 查看当前轮次进度
+python3 scripts/interactive_ideation_engine.py status --project-root <目录>
+
+# 提交本轮用户回答（JSON 键值对）
+python3 scripts/interactive_ideation_engine.py collect \
+  --project-root <目录> --answers '{"protagonist_goal":"...","core_conflict":"..."}'
+
+# 推进到下一轮（5 轮收敛）
+python3 scripts/interactive_ideation_engine.py advance --project-root <目录>
+
+# 生成产出物（idea_seed / novel_plan / 图谱初始数据）
+python3 scripts/interactive_ideation_engine.py generate --project-root <目录>
 ```
+
+> 也可直接用 `/脑洞建图`，底层走 `novel_flow_executor.py brainstorm`。

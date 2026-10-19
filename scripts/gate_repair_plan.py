@@ -72,6 +72,17 @@ def map_failure_to_steps(failure: str) -> List[str]:
             "重新执行 /门禁检查。",
         ]
 
+    if "body_metadata_purity" in f:
+        return [
+            "打开章节正文，删除所有非小说文本：方括号块（[写作约束]/[相关历史剧情]/[本章目标]）、"
+            "（注：…）与【…】注记、TODO、代码或文件路径残留。",
+            "若正文是模板兜底稿（出现主角/同伴/角色A 等占位人名，或整章为骨架拼接），"
+            "请由主 Agent 按 00_memory/beats/ 下的 beat sheet 写出正文，不要手工补字。",
+            "如属题材冲突导致误杀（例如「主角」是本作真实姓名），在 "
+            "00_memory/purity_allowlist.json 中登记 allow_names 后重试。",
+            "重新执行 /门禁检查。",
+        ]
+
     return [
         f"检查失败项：{failure}",
         "按失败项补齐对应产物后，重新执行 /门禁检查。",

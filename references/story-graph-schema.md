@@ -1,7 +1,6 @@
 # 知识图谱数据结构规范
 
-> 状态：规划中（Phase 2 实现）
-
+> 状态：已实现
 ## 设计目标
 
 用图结构（节点+边+版本）替代当前的平面文件，确保300万字规模下人物、事件、设定的一致性可机器校验。
@@ -124,21 +123,27 @@
 - 伏笔是否超期未回收
 - 关系强度变化是否有叙事支撑
 
-## 脚本入口（规划）
-
+## 脚本入口
 ```bash
 # 初始化图谱
 python3 scripts/story_graph_builder.py init --project-root <目录>
 
-# 章后更新图谱
-python3 scripts/story_graph_updater.py update --project-root <目录> --chapter <章节文件>
+# 章后从章节正文提取图谱更新建议 → 再落盘
+python3 scripts/story_graph_updater.py extract \
+  --project-root <目录> --chapter <章节号> --chapter-file <章节文件>
+python3 scripts/story_graph_updater.py apply --project-root <目录> --chapter <章节号>
+
+# 查看本章图谱变化
+python3 scripts/story_graph_updater.py diff --project-root <目录> --chapter <章节号>
 
 # 图谱一致性校验
-python3 scripts/story_graph_updater.py validate --project-root <目录>
+python3 scripts/story_graph_builder.py validate --project-root <目录>
 
 # 改纲级联分析
-python3 scripts/story_graph_updater.py cascade --project-root <目录> --changes <变更描述>
+python3 scripts/story_graph_updater.py cascade \
+  --project-root <目录> --from-chapter <起始章号> --change-description "<变更描述>"
 
-# 导出可视化（Mermaid格式）
-python3 scripts/story_graph_builder.py export --project-root <目录> --format mermaid
+# 导出可视化（Mermaid）
+python3 scripts/story_graph_builder.py export \
+  --project-root <目录> --direction LR --output graph.md
 ```

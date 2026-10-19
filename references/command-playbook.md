@@ -1,35 +1,58 @@
 # 命令手册（详细版）
 
 ## 0. 每章标准门禁（强制）
-每章固定顺序：
+
+每章固定顺序，六步缺一即流程中断：
+
 1. `/更新记忆`
 2. `/检查一致性`
-3. `/风格校准`
-4. `/校稿`
-5. `/门禁检查`
+3. `/节奏审查`
+4. `/风格校准`
+5. `/校稿`
+6. `/门禁检查`
 
-门禁失败规则：`/门禁检查` 未通过，章节状态必须保持草稿。
+门禁失败规则：`/门禁检查` 未通过，章节状态必须保持草稿。产物清单与判定规则见 `references/gate-artifacts-spec.md`。
 
 ## 0.1 新手最简命令（推荐）
+
 1. `/一键开书`
 2. `/继续写`
-3. `/修复本章`
+3. `/修复本章`（仅在门禁失败时）
 
 `/继续写` 自动执行完整章节流程，无需手动拆分命令。
 
 ## 1. 核心创作命令
+
 `/一键开书`
-- 输入：题材、剧情种子、主角目标、核心冲突、预期篇幅。
+- 输入：题材、剧情种子、主角目标、核心冲突、预期篇幅，以及开书五要素（目标读者 / 写作风格 / 核心禁区 / 自动化等级 / 目标规模）。
 - 输出：自动完成开书建模 + 建库 + 首章写作准备。
-- 执行：`python3 scripts/novel_flow_executor.py one-click --project-root <项目目录> --title <书名> --genre <题材> --idea <剧情种子>`
+- 执行：
+  ```bash
+  python3 scripts/novel_flow_executor.py one-click \
+    --project-root <项目目录> --title <书名> --genre <题材> --idea <剧情种子> \
+    --target-audience <目标读者> --writing-style <写作风格> --core-taboo <核心禁区>
+  ```
+- 说明：`--title/--genre/--idea` 有默认值但会被写成"未命名小说/待定题材"，**务必显式传入**；`--target-audience/--writing-style/--core-taboo` 默认空串，缺失时 Iron Law 的五要素确认无法落地。
 
 `/继续写`
 - 输入：本章目标、冲突、角色（均可选）。
-- 输出：自动完成“检索→写作→门禁→索引更新”。
-- 自动流程：`/剧情检索`（条件触发）→ `/写作` → `/更新记忆` → `/检查一致性` → `/风格校准` → `/校稿` → `/门禁检查` → `/更新剧情索引`。
+- 输出：自动完成"检索→写作→门禁→索引更新"。
+- 自动流程：`/剧情检索`（条件触发）→ `/写作` → `/更新记忆` → `/检查一致性` → `/节奏审查` → `/风格校准` → `/校稿` → `/门禁检查` → `/更新剧情索引`。
 - 执行：`python3 scripts/novel_flow_executor.py continue-write --project-root <项目目录> --query "<新剧情>"`
-- 进阶执行：`python3 scripts/novel_flow_executor.py continue-write --project-root <项目目录> --query "<新剧情>" --candidate-k 12 --max-auto-retry-rounds 2 --rollback-on-failure --idempotent-cache`
-- 说明：默认启用执行锁、幂等缓存、写前快照、失败回滚；若章节已成稿会自动触发门禁与最小修复联动。
+- 推荐执行（正式流程开启语义节奏审查强制校验）：
+  ```bash
+  python3 scripts/novel_flow_executor.py continue-write \
+    --project-root <项目目录> --query "<新剧情>" \
+    --candidate-k 12 --max-auto-retry-rounds 2 --require-semantic-pacing
+  ```
+- 说明：执行锁、幂等缓存、写前快照、失败回滚**默认全部开启**。`--rollback-on-failure` 与 `--idempotent-cache` 默认即为 `True`，显式传入属空操作，只能用对应的 `--no-*` 关闭。
+- 关闭高级特性：`--no-beat-sheet` / `--no-constraints` / `--no-graph-update` / `--no-batch-review` / `--no-research`。
+- **占位桩不参与检索**：`plot_rag_retriever.py build` 会跳过仍是骨架的章节（含 `<!-- NOVEL_FLOW_STUB -->` / `<!-- BEAT_SHEET_STUB -->` 或短文本独占行 `[待写]`），`build` 输出里的 `skipped_stub_docs` / `skipped_stub_files` 可核对。检索阶段还会兜底过滤旧索引里残留的桩文档与纯骨架片段，避免空桩混进参考上下文。
+- **正文由谁写（`--draft-provider`）**：默认 `auto`——项目配了外部 LLM（`.novel_writer_config.yaml` 或 `--llm-provider/--llm-api-key`）才走 `llm`，否则走 `agent`。
+  - `agent`（装到 Claude Code / MiMoCode 等工具时的常态）：**CLI 不写正文**。返回 `awaiting_draft: true` 与 `writing_package`（默认 `00_memory/next_chapter_task.md`），正文保持占位草稿。接手的 Agent 必须读写作包 → 写正文 → 重跑 `/继续写` 或 `/门禁检查`。
+  - `llm`：调 `novel_chapter_writer.py` 用外部 API 成稿，供 `/一键写书` 等无人值守场景。
+  - `template`：段落池拼接的占位脚手架，**仅调试用**；产物一定被 `body_metadata_purity` 判死（占位人名/写作指令），不能发布。
+  - 旧的 `CLAUDE_CODE_MODE` / MCP 信号文件机制已移除：既有宿主环境变量探测不到，也没有消费者，等于没生效。
 
 `/修复本章`
 - 输入：项目目录 + 章节文件。
@@ -37,38 +60,33 @@
 - 输出：`repair_plan.md`（最短修复路径）。
 
 `/新手模式`
-- 输入：`开启` 或 `关闭`。
-- 输出：切换简化交互层。
+- 输入：`开启` 或 `关闭`。输出：切换简化交互层。
 
 `/写全篇`
 - 输入：题材、剧情种子、主角目标、核心冲突、预期篇幅。
 - 输出：`idea_seed.md`、`million_word_blueprint.md`、`novel_plan.md`、`novel_state.md`。
-
-`/剧情检索`
-- 输入：当前准备写的新剧情描述（冲突、人物、事件目标）。
-- 执行：`python3 scripts/plot_rag_retriever.py query --project-root <项目目录> --query "<新剧情>" --top-k 4 --candidate-k 12 --auto-build`
-- 默认行为：条件触发（轻场景自动跳过）、片段级召回、查询缓存。
-- 常用参数：`--force`（强制检索）、`--no-cache`（禁用缓存）、`--no-conditional`（每次都检索）。
-- 输出：`00_memory/retrieval/next_plot_context.md`（建议回读章节 + 关键片段 + 角色关系片段）。
-- 补充产物：`00_memory/retrieval/chapter_meta/*.meta.json`（章节 sidecar 元数据）。
 
 `/写作`
 - 输入：章节目标、冲突、人物、上章结尾。
 - 输出：单章草稿（必须保存为 `03_manuscript/*.md`，然后进入门禁流程）。
 
 `/续写`
-- 输入：项目目录。
-- 输出：状态恢复 + 新章节草稿（进入门禁流程）。
+- 输入：项目目录。输出：状态恢复 + 新章节草稿（进入门禁流程）。
 
 `/批量写作`
-- 输入：目标章数、每章任务点。
-- 输出：多章草稿（每章都要跑门禁流程）。
+- 输入：目标章数、每章任务点。输出：多章草稿（每章都要跑门禁流程）。
 
 `/修改章节`
-- 输入：目标章节、修改要求。
-- 输出：修订稿 + 影响报告 + 记忆级联更新。
+- 输入：目标章节、修改要求。输出：修订稿 + 影响报告 + 记忆级联更新。
+
+`/脑洞建图`
+- 输入：模糊想法（题材、主角梗、想要的感觉）。
+- 执行：`python3 scripts/novel_flow_executor.py brainstorm --project-root <项目目录>`
+- 底层引擎：`python3 scripts/interactive_ideation_engine.py init|status|collect|advance|generate --project-root <项目目录>`（5 轮收敛，产出 `idea_seed.md`、`novel_plan.md`、图谱初始数据）。
+- 细化流程见 `references/interactive-brainstorming-playbook.md`。
 
 ## 2. 剧情索引与检索命令
+
 `/更新剧情索引`
 - 输入：项目目录。
 - 执行：`python3 scripts/plot_rag_retriever.py build --project-root <项目目录>`（默认增量构建，仅重算变更章节）
@@ -76,56 +94,89 @@
 - 输出：`00_memory/retrieval/story_index.json`、`00_memory/retrieval/entity_chapter_map.json`。
 
 `/剧情检索`
-- 输入：新剧情描述。
-- 输出：`next_plot_context.md`，用于写前最小上下文读取。
+- 输入：当前准备写的新剧情描述（冲突、人物、事件目标）。
+- 执行：`python3 scripts/plot_rag_retriever.py query --project-root <项目目录> --query "<新剧情>" --top-k 4 --candidate-k 12 --auto-build`
+- 默认行为：条件触发（轻场景自动跳过）、片段级召回、查询缓存。
+- 常用参数：`--force`（强制检索）、`--no-cache`（禁用缓存）、`--no-conditional`（每次都检索）。
+- 输出：`00_memory/retrieval/next_plot_context.md`（建议回读章节 + 关键片段 + 角色关系片段）与 `00_memory/retrieval/chapter_meta/*.meta.json`（章节 sidecar 元数据）。
+
+`/检索记忆` · `/伏笔状态` · `/角色状态` · `/时间线`
+- 主 Agent 直读 `00_memory/` 下的 `foreshadowing_tracker.md` / `character_tracker.md` / `timeline.md`，无独立脚本。
 
 ## 3. 分析与建库命令
-`/拆书`
-- 输入：目标作品文本或信息。
-- 输出：结构拆解、爽点机制、人设与开篇策略。
 
-`/仿写`
-- 输入：样章文本（建议 >=2）。
-- 输出：写法模板 + 风格特征摘要。
-
-`/建库`
-- 输入：项目名、题材、核心设定。
-- 输出：记忆系统与知识库初始化（章节目录为 `03_manuscript/`，知识库目录为 `02_knowledge_base/`）。
+`/拆书` —— 输入：目标作品文本或信息。输出：结构拆解、爽点机制、人设与开篇策略。
+`/仿写` —— 输入：样章文本（建议 >=2）。输出：写法模板 + 风格特征摘要。
+`/建库` —— 输入：项目名、题材、核心设定。输出：记忆系统与知识库初始化（章节在 `03_manuscript/`，知识库在 `02_knowledge_base/`，状态追踪器在 `00_memory/`）。
 
 ## 4. 质量命令（每章必经）
+
 `/更新记忆`
-- 输入：本章正文。
-- 输出：`novel_state.md`、追踪器、摘要更新。
+- 输入：本章正文。输出：`novel_state.md`、追踪器、摘要更新。
 - 产物：`04_editing/gate_artifacts/<chapter_id>/memory_update.md`
 
 `/检查一致性`
-- 输入：本章正文 + 当前记忆文件。
-- 输出：一致性风险清单 + 修正建议。
+- 输入：本章正文 + 当前记忆文件。输出：一致性风险清单 + 修正建议。
 - 产物：`04_editing/gate_artifacts/<chapter_id>/consistency_report.md`
 
+`/节奏审查`（⛔ 由当前 Agent 直接执行，无需外部 API）
+- 输入：本章正文 + `pacing_tracker.py` 的档位/配额记录。
+- 输出：四项语义判断（档位、A/B/C 配额、章末悬念、隐性加速）。
+- 产物：`04_editing/gate_artifacts/<chapter_id>/pacing_review.md`，**必须含 `节奏审查: 通过`**
+- 输出模板与判定标准见 `SKILL.md` §4 与 `references/anti-resolution-cooldown-spec.md`。
+- 门禁默认在文件缺失时自动生成降级版本；加 `--require-semantic-pacing` 则缺失即判失败。
+
 `/风格校准`
-- 输入：本章正文 + `style_anchor.md`。
-- 输出：风格偏移报告 + 修正建议。
+- 输入：本章正文 + `style_anchor.md`。输出：风格偏移报告 + 修正建议。
 - 产物：`04_editing/gate_artifacts/<chapter_id>/style_calibration.md`
 
 `/校稿`
-- 输入：校准后的章节稿。
-- 输出：去AI味发布稿。
-- 产物：
-- `04_editing/gate_artifacts/<chapter_id>/copyedit_report.md`
-- `04_editing/gate_artifacts/<chapter_id>/publish_ready.md`
+- 输入：校准后的章节稿。输出：去AI味发布稿。
+- 产物：`04_editing/gate_artifacts/<chapter_id>/copyedit_report.md` 与 `publish_ready.md`
 
 `/门禁检查`
 - 输入：项目目录 + 章节文件。
-- 执行：`python3 scripts/chapter_gate_check.py --project-root <项目目录> --chapter-file <章节文件>`
-- 输出：通过/失败结果（同时校验章节必须在 `03_manuscript/` 且为 `.md`，并检查知识库目录没有混入章节文件）。
-- 新增硬校验：`quality_report.md` 必须存在且结论为 `通过：True`。
+- 执行：
+  ```bash
+  python3 scripts/chapter_gate_check.py \
+    --project-root <项目目录> --chapter-file <章节文件> \
+    [--require-semantic-pacing]
+  ```
+- 判定：6 个硬性产物齐全且 mtime 不早于章节文件；`publish_ready.md` 命中发布关键字；`quality_report.md` 结论为全角冒号的 `通过：True`；`pacing_review.md` 结论为 `通过`；反向刹车与节奏追踪器无 errors。
 - 产物：`04_editing/gate_artifacts/<chapter_id>/gate_result.json`
+- 完整判定规则见 `references/gate-artifacts-spec.md`。
+
+## 5. 风格系统命令
+
+`/风格提取`
+- 输入：风格名、项目目录、样章文件（位置参数）。
+- 执行：`python3 scripts/style_fingerprint.py <样章1> <样章2> --profile-name "<风格名>" --project-root <项目目录>`
+- 输出：项目风格档案 + 全局风格库索引。全局库路径默认依次尝试 `$NOVEL_OS_STYLE_LIBRARY` → `~/.claude/skills/novel-os/assets/style_library` → 仓库 `assets/style_library`。
+
+`/题材选风格` —— 输入：题材、目标读者、节奏偏好。输出：题材基线风格 + 项目修正项。
+`/风格迁移` —— 输入：章节草稿 + 目标风格档案。输出：迁移稿 + 偏移说明。
+`/风格库检索` —— 输入：题材与目标效果。输出：可复用风格候选与优先级。
+
+## 6. 安装与模式命令
+
+`/安装到多工具`
+- 输入：目标工具（codex/claude-code/opencode/gemini-cli/antigravity）。
+- 执行：`bash scripts/install-portable-skill.sh --tool <tool> --force`
+- 输出：安装目录（默认 `<工具技能目录>/novel-os`）与入口文件。详见 `references/multi-tool-install.md`。
+
+`/新手模式` —— 输入：`开启` 或 `关闭`。输出：切换结果与下一步推荐命令。
+
+## 7. 评测基线
+
+`/评测基线`（脚本入口）
+- 输入：项目目录、评测轮数。
+- 执行：`python3 scripts/benchmark_novel_flow.py --project-root <项目目录> --rounds 5`
+- 输出：`00_memory/retrieval/eval_baseline.json`（包含 ok_rate、gate_pass_rate、retry_rate、avg_runtime_ms、avg_retrieval_context_chars 等指标）。
 
 ## 8. 改纲与维护命令
 
 `/改纲续写`
-- **适用场景**：在故事进行中发现主线走向需调整，修改 `novel_plan.md` 后必须执行此命令重新对齐三层索引（大纲锚点 / 知识图谱 / RAG），然后才能继续写作。
+- **适用场景**：故事进行中发现主线走向需调整，修改 `novel_plan.md` 后必须执行此命令重新对齐三层索引（大纲锚点 / 知识图谱 / RAG），然后才能继续写作。
 - **执行顺序**：手动编辑 `novel_plan.md` → 执行 `/改纲续写` → 查阅影响报告 → `/继续写`
 - **执行**：
   ```bash
@@ -133,7 +184,7 @@
     --project-root <项目目录> \
     --from-chapter <起始章节号> \
     [--change-description "<改纲说明>"] \
-    [--emit-json]
+    [--emit-json <输出文件路径>]
   ```
 - **参数**：
 
@@ -142,7 +193,7 @@
   | `--project-root` | 路径 | 是 | 小说项目根目录，须包含 `00_memory/novel_plan.md` |
   | `--from-chapter` | 整数（≥1） | 是 | 改纲影响的起始章节号（含该章节） |
   | `--change-description` | 字符串 | 否 | 本次改纲的简要说明，写入影响报告 |
-  | `--emit-json` | 开关 | 否 | 将 JSON 结果追加到 stdout（供脚本解析） |
+  | `--emit-json` | 路径 | 否 | 额外把 JSON 结果落盘到该路径；stdout 已始终输出 JSON，无需此参数也能解析 |
 
 - **三步级联流程**：
   1. **锚点重算**（Step 1，必须成功）：备份当前 `outline_anchors.json` 至 `.flow/backup_anchors_<时间戳>.json`，再从改纲后的 `novel_plan.md` 重新计算大纲锚点
@@ -157,40 +208,6 @@
 - **图谱级联子命令**（仅脚本层，`/改纲续写` 内部调用）：
   ```bash
   python3 scripts/story_graph_updater.py cascade \
-    --project-root <项目目录> \
-    --from-chapter <N> \
+    --project-root <项目目录> --from-chapter <N> \
     [--change-description "<说明>"]
   ```
-
-## 7. 评测基线
-`/评测基线`（脚本入口）
-- 输入：项目目录、评测轮数。
-- 执行：`python3 scripts/benchmark_novel_flow.py --project-root <项目目录> --rounds 5`
-- 输出：`00_memory/retrieval/eval_baseline.json`（包含 ok_rate、gate_pass_rate、retry_rate、avg_runtime_ms、avg_retrieval_context_chars 等指标）。
-
-## 5. 风格系统命令
-`/风格提取`
-- 输入：风格名、项目目录、样章文件。
-- 输出：项目风格档案 + 全局风格库索引。
-
-`/题材选风格`
-- 输入：题材、目标读者、节奏偏好。
-- 输出：题材基线风格 + 项目修正项。
-
-`/风格迁移`
-- 输入：章节草稿 + 目标风格档案。
-- 输出：迁移稿 + 偏移说明。
-
-`/风格库检索`
-- 输入：题材与目标效果。
-- 输出：可复用风格候选与优先级。
-
-## 6. 安装与模式命令
-`/安装到多工具`
-- 输入：目标工具（codex/claude-code/opencode/gemini-cli/antigravity）。
-- 执行：`bash scripts/install-portable-skill.sh --tool <tool> --force`
-- 输出：安装目录与入口文件。
-
-`/新手模式`
-- 输入：`开启` 或 `关闭`。
-- 输出：切换结果与下一步推荐命令。

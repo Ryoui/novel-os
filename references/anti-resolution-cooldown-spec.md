@@ -1,7 +1,6 @@
 # 反向刹车与事件冷却机制规范
 
-> 状态：规划中（Phase 2/3 实现）
-
+> 状态：已实现
 ## 一、反向刹车（Anti-Resolution）
 
 ### 问题背景
@@ -103,8 +102,7 @@ AI 有强烈的"帮助解决问题"倾向，导致它太喜欢在章节末尾给
 
 `00_memory/event_matrix_state.json`
 
-## 脚本入口（规划）
-
+## 脚本入口
 ```bash
 # 查询当前事件冷却状态
 python3 scripts/event_matrix_scheduler.py status --project-root <目录>

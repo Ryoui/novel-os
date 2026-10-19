@@ -1,7 +1,6 @@
 # 跨Agent双智能体审核协议
 
-> 状态：规划中（Phase 3 实现）
-
+> 状态：已实现
 ## 设计目标
 
 引入独立的外部 Agent 作为审稿官，避免"自己写自己审"的盲区。通过不同 AI 工具的交叉审核，提升质量把关可靠性。
@@ -95,7 +94,7 @@
 1. **最大审核轮次**：单章最多 3 轮外部审核
 2. **收敛判定**：如果第2轮和第3轮的 P0 问题相同（即修不好），自动停机
 3. **降级策略**：达到轮次上限后：
-   - 记录未解决问题到 `04_editing/unresolved_issues.md`
+   - 记录未解决问题到 `04_editing/unresolved_issues.json`
    - 标记该章为"有条件通过"
    - 继续下一章写作，不阻塞
    - 在下次批处理审核时一并复查
@@ -117,21 +116,27 @@
 
 ### 输出
 
-`04_editing/batch_review_ch{start}-{end}.md`
+`04_editing/cross_reviews/batch_ch{start:04d}-{end:04d}_prompt.md`
 
-## 脚本入口（规划）
-
+## 脚本入口
 ```bash
-# 逐章审核
+# 逐章审核（生成审核任务；审核结果由另一个 AI 工具填写后回传）
 python3 scripts/cross_agent_reviewer.py review \
-  --project-root <目录> --chapter-file <章节文件> \
-  --reviewer codex --max-rounds 3
+  --project-root <目录> --chapter <章节号> --chapter-file <章节文件> \
+  --writer-tool claude-code
 
-# 批处理审核
+# 批处理审核（每10章体检）
 python3 scripts/cross_agent_reviewer.py batch-review \
-  --project-root <目录> --chapter-range 1-10 \
-  --reviewer codex
+  --project-root <目录> --chapter-start 1 --chapter-end 10 \
+  --writer-tool claude-code
+
+# 记录审核结果（--round 必填；p0/p1/p2 用 | 分隔多条）
+python3 scripts/cross_agent_reviewer.py record \
+  --project-root <目录> --chapter <章节号> --round 1 \
+  --verdict conditional --p0 "问题A|问题B"
 
 # 查看未解决问题
 python3 scripts/cross_agent_reviewer.py unresolved --project-root <目录>
 ```
+
+产物位置：审核任务写入 `04_editing/cross_reviews/`（如 `batch_ch0001-0010_prompt.md`），未解决问题写入 `04_editing/unresolved_issues.json`。

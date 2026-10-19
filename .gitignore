@@ -6,11 +6,21 @@ novel_projects/
 novels/
 test_output/
 
+# 运行期小说项目目录（技能仓库根目录不得驻留项目数据）
+00_memory/
+02_knowledge_base/
+03_manuscript/
+04_editing/
+.flow/
+
 # IDE 和工具配置
-.claude/
+# 注意：只忽略 .claude/ 的内容而非目录本身，否则 git 无法 re-include 子路径
+.claude/*
+!.claude/agents/
 .codex/
 .opencode/
 openspec/
+.mimocode/
 
 # 临时报告文件
 ASSESSMENT_REPORT*.md

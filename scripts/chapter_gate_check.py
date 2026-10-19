@@ -11,9 +11,10 @@ import re
 import sys
 import types
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from common import slugify
+from config import QualityConfig
 
 # 确保同目录脚本可直接 import
 _SCRIPT_DIR = Path(__file__).parent
@@ -145,6 +146,141 @@ def check_pacing_review(path: Path) -> Tuple[bool, str]:
     return True, "通过"
 
 
+def load_purity_allowlist(
+    project_root: Path, override: Optional[str]
+) -> Tuple[Set[str], List[str]]:
+    """加载正文纯净度白名单。
+
+    默认读取 <project-root>/00_memory/purity_allowlist.json：
+        {"allow_names": ["主角"], "allow_patterns": ["这一幕的主角是"]}
+    allow_names    — 视为合法人名，不再参与占位名判定
+    allow_patterns — 命中文本包含该子串时放行该条元信息命中
+    """
+    path = Path(override).expanduser() if override else project_root / "00_memory" / "purity_allowlist.json"
+    if not path.exists():
+        return set(), []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return set(), []
+    if not isinstance(data, dict):
+        return set(), []
+    names = {str(x).strip() for x in (data.get("allow_names") or []) if str(x).strip()}
+    patterns = [str(x) for x in (data.get("allow_patterns") or []) if str(x).strip()]
+    return names, patterns
+
+
+def _line_of(text: str, pos: int) -> int:
+    return text.count("\n", 0, pos) + 1
+
+
+def _snippet(text: str, pos: int, length: int, pad: int = 20) -> str:
+    start = max(0, pos - pad)
+    end = min(len(text), pos + length + pad)
+    return re.sub(r"\s+", " ", text[start:end]).strip()
+
+
+def check_body_metadata(
+    chapter_path: Path,
+    allow_names: Set[str],
+    allow_patterns: List[str],
+) -> Tuple[bool, str, Dict[str, Any]]:
+    """正文纯净度硬检查：元信息残留或占位人名 → 判死。
+
+    占位名不做字面判死，只在「同词 ≥3 次」或「出现在对话标签位」时判定，
+    避免误杀「这部剧的主角」这类正常叙述。
+    """
+    cfg = QualityConfig()
+    text = chapter_path.read_text(encoding="utf-8", errors="ignore")
+
+    stub_hits: List[str] = []
+    if cfg.stub_marker in text:
+        stub_hits.append(cfg.stub_marker)
+    if cfg.beat_sheet_stub_marker in text:
+        stub_hits.append(cfg.beat_sheet_stub_marker)
+    if re.search(r"(?m)^\[待写\]\s*$", text):
+        stub_hits.append("[待写]")
+    if stub_hits:
+        detail = {
+            "stub": True,
+            "violations": [
+                {"category": "占位草稿", "hit": h, "line": 1, "snippet": ""} for h in stub_hits
+            ],
+            "counts": {"占位草稿": len(stub_hits)},
+        }
+        return (
+            False,
+            f"章节仍是占位草稿（正文未写）：命中 {'、'.join(stub_hits)}",
+            detail,
+        )
+
+    violations: List[Dict[str, Any]] = []
+    counts: Dict[str, int] = {}
+
+    for pattern, category, hint in cfg.body_meta_markers:
+        for m in re.finditer(pattern, text):
+            hit = m.group(0)
+            if allow_patterns and any(ap in hit for ap in allow_patterns):
+                continue
+            violations.append(
+                {
+                    "category": category,
+                    "hit": hit,
+                    "line": _line_of(text, m.start()),
+                    "snippet": _snippet(text, m.start(), len(hit)),
+                    "hint": hint,
+                }
+            )
+            counts[category] = counts.get(category, 0) + 1
+
+    candidates = [n for n in cfg.placeholder_names if n not in allow_names]
+    for name in candidates:
+        occurrences = text.count(name)
+        tag_m = re.search(
+            rf"{re.escape(name)}(?:说|道|问|答|喊|笑|点头|摇头|压低声音)", text
+        )
+        if occurrences >= 3 or tag_m:
+            hits_lines = [
+                _line_of(text, m.start()) for m in re.finditer(re.escape(name), text)
+            ][:4]
+            violations.append(
+                {
+                    "category": "占位人名",
+                    "hit": name,
+                    "line": hits_lines[0] if hits_lines else 1,
+                    "lines": hits_lines,
+                    "count": occurrences,
+                    "snippet": _snippet(text, text.find(name), len(name)),
+                    "hint": "把占位人名替换为真实角色名，或先执行 /更新记忆 补全人物档案",
+                }
+            )
+            counts["占位人名"] = counts.get("占位人名", 0) + 1
+
+    if not violations:
+        return True, "通过", {"stub": False, "violations": [], "counts": {}}
+
+    parts: List[str] = []
+    for category, count in counts.items():
+        if category == "占位人名":
+            names = [
+                f"「{v['hit']}」×{v.get('count', 0)}"
+                for v in violations
+                if v["category"] == "占位人名"
+            ]
+            parts.append(f"{category}{'、'.join(names)}")
+        else:
+            parts.append(f"{category}×{count}")
+    lines = sorted({v["line"] for v in violations})
+    line_part = "（第" + "/".join(str(x) for x in lines[:6]) + "行）" if lines else ""
+    message = f"命中 {len(violations)} 处正文污染：" + "、".join(parts) + line_part
+
+    return (
+        False,
+        message,
+        {"stub": False, "violations": violations[:10], "counts": counts},
+    )
+
+
 def generate_script_pacing_review(
     tier: str,
     triggered_quotas: List[str],
@@ -223,6 +359,10 @@ def parse_args() -> argparse.Namespace:
                    help="当前章预期节奏档位（传入 pacing_tracker check 做预演）")
     p.add_argument("--pacing-event-types", default="",
                    help="当前章事件类型，逗号分隔（档位推断用）")
+    p.add_argument("--require-semantic-pacing", action="store_true",
+                   help="强制要求 /节奏审查 产出的 pacing_review.md；缺失时判失败而非自动生成降级版本")
+    p.add_argument("--purity-allowlist",
+                   help="正文纯净度白名单路径；默认 <project-root>/00_memory/purity_allowlist.json")
     return p.parse_args()
 
 
@@ -412,9 +552,11 @@ def main() -> int:
         )
 
     # ── 节奏审查（pacing_review.md）────────────────────────────────
-    # 优先使用 Claude Code 写入的语义版本；不存在时从脚本检查结果自动生成。
+    # 优先使用 Agent 写入的语义版本；不存在时从脚本检查结果自动生成降级版本。
+    # --require-semantic-pacing 开启时不做降级，缺失即判失败。
     _pr_path = gate_dir / "pacing_review.md"
-    if not _pr_path.exists():
+    _pr_missing = not _pr_path.exists()
+    if _pr_missing:
         # 从已完成的脚本检查中提取数据，生成回退版本
         _pr_arg_check = next(
             (c for c in result["checks"] if c.get("name") == "anti_resolution_guard"), {}
@@ -438,7 +580,16 @@ def main() -> int:
             _pr_tier, _pr_triggered, _pr_suspense, _pr_arg_errors, _pr_pt_errors
         )
         _pr_path.write_text(_pr_content, encoding="utf-8")
-        result["warnings"].append("pacing_review.md 不存在，已从脚本检查结果自动生成（建议在 Claude Code 中执行 /节奏审查 获取语义版本）")
+        if args.require_semantic_pacing:
+            result["failures"].append(
+                "pacing_review_semantic: pacing_review.md 缺失，未执行 /节奏审查"
+                "（--require-semantic-pacing 强制要求语义版本）"
+            )
+        else:
+            result["warnings"].append(
+                "pacing_review.md 不存在，已从脚本检查结果自动生成降级版本"
+                "（正式流程请执行 /节奏审查，或加 --require-semantic-pacing 强制校验）"
+            )
 
     if _pr_path.exists() and _pr_path.stat().st_size >= args.min_bytes:
         _pr_ok, _pr_msg = check_pacing_review(_pr_path)
@@ -452,6 +603,26 @@ def main() -> int:
         )
         if not _pr_ok:
             result["failures"].append(f"pacing_review_semantic: {_pr_msg}")
+
+    # ── 正文纯净度（元信息残留 / 占位人名）────────────────────────
+    # 判死项：门禁校验的是「这段文字能不能发」，而不只是产物文件在不在。
+    _allow_names, _allow_patterns = load_purity_allowlist(
+        project_root, getattr(args, "purity_allowlist", None)
+    )
+    _body_ok, _body_msg, _body_details = check_body_metadata(
+        chapter_path, _allow_names, _allow_patterns
+    )
+    result["checks"].append(
+        {
+            "name": "body_metadata_purity",
+            "path": str(chapter_path),
+            "ok": _body_ok,
+            "message": _body_msg,
+            "details": _body_details,
+        }
+    )
+    if not _body_ok:
+        result["failures"].append(f"body_metadata_purity: {_body_msg}")
 
     result["passed"] = len(result["failures"]) == 0
 

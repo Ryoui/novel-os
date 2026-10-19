@@ -1,5 +1,10 @@
 # Novel Creator Skill 审计报告
 
+> ⚠️ **已过期（架构归档）**：本报告针对 2026-03-04 的旧版代码。其中列出的
+> `content_expansion_engine.py:235` 语法错误、`performance.py` 缺 `Any` 导入、
+> `long_term_context_manager.py:168,262` 吞异常等问题**均已修复**，三个模块现在可正常编译。
+> 保留此文件仅为记录当时的决策过程，请勿据此判断当前代码状态。
+
 - 审计日期: 2026-03-04
 - 审计对象: `leenbj/novel-creator-skill`
 - 本地路径: `/Users/ethan/Desktop/小说/novel-creator-skill`

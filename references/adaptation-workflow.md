@@ -18,7 +18,7 @@
 2. 搜索相关的拆书分析、读者评价
 3. 汇总为结构化素材供后续分析
 
-脚本入口（规划）：
+脚本入口：
 ```bash
 python3 scripts/research_agent.py plan --genre <题材> --topic "<小说名称> 拆书分析" --depth standard
 ```
@@ -84,11 +84,12 @@ python3 scripts/research_agent.py plan --genre <题材> --topic "<小说名称> 
 
 ```bash
 # 拆书分析（已有文本）
-# 当前通过 AI 工具直接执行 /拆书 命令
+# 当前通过主 Agent 直接执行 /拆书 命令
 
-# 风格提取
-python3 scripts/style_fingerprint.py \
-  --project-root <目录> --style-name "<风格名>" --sample-files <样章1> <样章2>
+# 风格提取（位置参数为样章文件，--profile-name 必填）
+python3 scripts/style_fingerprint.py <样章1> <样章2> \
+  --profile-name "<风格名>" \
+  --project-root <目录>
 ```
 
 ## 参考文档导航中的位置

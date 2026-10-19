@@ -1,6 +1,6 @@
 # 编辑团队协议（Editorial Team Protocol）
 
-> 对应 SKILL.md v1.0.0 Section 11
+> 对应 `SKILL.md` §11「Agent 编辑团队」
 
 ## 设计动机
 
@@ -91,6 +91,44 @@
 - 无 P0 → 使用润色后版本进入门禁
 
 ---
+
+## 执行方式（Claude Code）
+
+四个角色定义在仓库的 `.claude/agents/`，安装脚本会在 `--tool claude-code` 时复制到 `~/.claude/agents/`。总编辑（主 Agent）按以下顺序调度：
+
+```
+步骤 0  准备上下文快照
+        python3 scripts/editorial_team_manager.py snapshot --project-root <路径>
+        → 读取输出中的 context_file 与 current_chapter_no
+
+步骤 1  召唤策划主编
+        Agent(subagent_type="planning-editor", prompt="读 <项目> 的 novel_plan/novel_state/character_tracker，生成本章 Chapter Brief")
+        → 等待 CHAPTER_BRIEF_START...END
+
+步骤 2  召唤写作特工
+        Agent(subagent_type="novelist", prompt="[把完整 CHAPTER_BRIEF 原文粘贴于此]")
+        → 等待 NOVEL_TEXT_START...END
+
+步骤 3  并行召唤两个审核者（同一条消息里发两个 Agent 调用，后台并行）
+        Agent(subagent_type="anti-ai-editor",        prompt="对以下正文执行去AI化审核：\n[NOVEL_TEXT]")
+        Agent(subagent_type="consistency-reviewer", prompt="核查以下正文，项目路径：<路径>\n[NOVEL_TEXT]")
+        → 等待两份报告
+
+步骤 4  总编辑汇总判定
+        P0 存在 → 返工（最多 2 次）
+        无 P0  → 采用反AI编辑润色后的版本
+        python3 scripts/editorial_team_manager.py record-review \
+          --project-root <路径> --chapter N --stage final \
+          --verdict pass --p0 0 --p1 2 --p2 3
+
+步骤 5  输出最终章节包到 03_manuscript/第N章-[标题].md
+
+步骤 6  检查是否需要人工介入
+        python3 scripts/editorial_team_manager.py need-human --project-root <路径>
+        → need_human=true 则暂停并向用户汇报
+```
+
+**非 Claude Code 工具**没有子 Agent 机制，改用脚本路径：`cross_agent_reviewer.py review|batch-review|record`，由一个外部 AI 工具填写审核结果后 `record` 回传。
 
 ## 正文隔离协议
 

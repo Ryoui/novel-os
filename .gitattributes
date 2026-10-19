@@ -1,0 +1,9 @@
+# 安装脚本必须在 bash 下直接可执行，强制 LF 行尾。
+# 否则在 core.autocrlf=true 的仓库里 checkout 出 CRLF，bash 会报
+# "syntax error near unexpected token $'{\r'" 而完全无法运行。
+*.sh text eol=lf
+
+# Markdown / Python / JSON 沿用仓库默认（Windows 下 CRLF 亦可正常工作）
+*.md text
+*.py text
+*.json text

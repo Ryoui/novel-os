@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 from common import (
     ensure_dir, read_text, write_text, slugify,
     sha1_text, file_sha1, load_json, save_json,
-    chapter_no_from_name,
+    chapter_no_from_name, is_draft_stub_text,
 )
 
 
@@ -117,16 +117,8 @@ def _extract_event_types_from_constraints(constraints: object) -> List[str]:
     return [str(t) for t in rec_types if str(t) in _VALID_EVENT_TYPES]
 
 
-# 环境变量：标记当前是否在 Claude Code / Codex 等 CLI 工具中运行
-# 设置此变量后，系统将使用 MCP Codex 工具进行写作，无需外部 API Key
-_CLAUDE_CODE_MODE = os.environ.get("CLAUDE_CODE_MODE", "") or os.environ.get("CODEX_MODE", "")
-
-
 def _has_llm_config(args: argparse.Namespace, project_root: Path) -> bool:
-    """Check if LLM configuration is available for writing."""
-    # 优先检查是否在 Claude Code / Codex 模式下
-    if _CLAUDE_CODE_MODE:
-        return True
+    """项目是否配置了可直接调用的外部 LLM（批处理模式用）。"""
     if getattr(args, "llm_provider", None) or getattr(args, "llm_api_key", None):
         return True
     if os.environ.get("NOVEL_LLM_PROVIDER") or os.environ.get("NOVEL_AI_PROVIDER"):
@@ -135,149 +127,15 @@ def _has_llm_config(args: argparse.Namespace, project_root: Path) -> bool:
 
 
 def _resolve_draft_provider(args: argparse.Namespace, project_root: Path) -> str:
-    """Resolve draft provider: auto -> llm (if configured) or template."""
+    """决定谁来写正文：llm / template / agent。
+
+    agent = 由宿主 Agent（Claude Code / MiMoCode 等）自己写。
+    安装到 agent 工具后的默认行为：CLI 只备料与校验，正文交给宿主模型。
+    """
     raw = str(getattr(args, "draft_provider", "auto") or "auto")
     if raw in {"template", "llm"}:
         return raw
-    # Claude Code 模式下默认使用 llm（通过 MCP Codex）
-    if _CLAUDE_CODE_MODE:
-        return "llm"
-    return "llm" if _has_llm_config(args, project_root) else "template"
-
-
-def _split_sentences(paragraph: str) -> List[str]:
-    """Split paragraph into sentences based on Chinese punctuation."""
-    return [s.strip() for s in re.split(r"(?<=[。！？!?])", paragraph) if s.strip()]
-
-
-def _normalize_paragraph_variance(text: str) -> str:
-    """Balance paragraph lengths: split long ones, merge short ones."""
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
-    normalized: List[str] = []
-    buffer_short: List[str] = []
-    for p in paragraphs:
-        sentences = _split_sentences(p)
-        if len(p) >= 260 and len(sentences) >= 4:
-            cut = max(2, len(sentences) // 2)
-            normalized.append("".join(sentences[:cut]).strip())
-            normalized.append("".join(sentences[cut:]).strip())
-            continue
-        if len(p) <= 45:
-            buffer_short.append(p)
-            if sum(len(x) for x in buffer_short) >= 90:
-                normalized.append(" ".join(buffer_short))
-                buffer_short = []
-            continue
-        if buffer_short:
-            normalized.append(" ".join(buffer_short))
-            buffer_short = []
-        normalized.append(p)
-    if buffer_short:
-        normalized.append(" ".join(buffer_short))
-    return "\n\n".join(normalized)
-
-
-def _rebalance_dialogue_heavy_text(text: str, query: str) -> str:
-    """Insert narrative bridges between consecutive dialogue-heavy paragraphs."""
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
-    out: List[str] = []
-    dialogue_run = 0
-    for p in paragraphs:
-        is_dialogue_heavy = p.startswith(("“", "”")) or p.count("“") >= 2
-        out.append(p)
-        if is_dialogue_heavy:
-            dialogue_run += 1
-        else:
-            dialogue_run = 0
-        if dialogue_run >= 2:
-            out.append(
-                f"——叙述桥——两人的话并没有直接解决“{query}”，"
-                "反而把风险顺序、执行步骤与彼此顾虑暴露得更清楚。"
-                "他们不得不把口头判断落实到行动上，场面因此继续向前推进。"
-            )
-            dialogue_run = 0
-    return "\n\n".join(out)
-
-
-def _build_pacing_rewrite_prompt(query: str, failures: List[str]) -> str:
-    """Build prompt for LLM to rewrite chapter with pacing issues."""
-    return (
-        "Rewrite the chapter to fix pacing issues (too fast / summary skips).\n"
-        f"Task: {query}\n"
-        f"Failures: {'; '.join(failures)}\n\n"
-        "Requirements:\n"
-        "1. Preserve all plot facts, character relations, event order, and chapter hooks.\n"
-        "2. Expand summary skip phrases like 'after a while' into continuous visible scenes.\n"
-        "3. Each key progress must include: action -> sensory/environment -> feedback/resistance -> new decision.\n"
-        "4. Do not just append summary patches; rewrite the high skip density paragraphs themselves.\n"
-        "5. Control dialogue ratio; balance paragraph lengths.\n"
-        "6. Output only the rewritten text, no explanations.\n"
-    )
-
-
-def _write_with_mcp_codex(
-    project_root: Path,
-    chapter_path: Path,
-    prompt: str,
-) -> bool:
-    """Write chapter using MCP Codex tool (Claude Code integration).
-
-    This function is called when CLAUDE_CODE_MODE is enabled, allowing
-    the system to use the current Claude Code session for writing without
-    requiring external API keys.
-
-    Returns True on success.
-    """
-    # This is a placeholder that signals the orchestrator to use MCP Codex
-    # The actual MCP call is handled by the calling code (Claude Code agent)
-    # We write a signal file that the agent can detect and respond to
-    signal_file = project_root / ".flow" / "mcp_write_request.json"
-    ensure_dir(signal_file.parent)
-
-    signal_data = {
-        "chapter_path": str(chapter_path),
-        "prompt": prompt,
-        "timestamp": dt.datetime.now().isoformat(),
-    }
-    write_json(signal_file, signal_data)
-
-    # Return False to indicate this needs to be handled by the caller
-    # The actual MCP Codex call will be made by the Claude Code agent
-    return False
-
-
-def _rewrite_chapter_with_llm(
-    project_root: Path,
-    chapter_path: Path,
-    args: argparse.Namespace,
-    prompt: str,
-) -> bool:
-    """Rewrite chapter using LLM for pacing issues. Returns True on success."""
-    if not _has_llm_config(args, project_root):
-        return False
-
-    # Claude Code 模式：使用 MCP Codex
-    if _CLAUDE_CODE_MODE:
-        return _write_with_mcp_codex(project_root, chapter_path, prompt)
-    try:
-        from novel_chapter_writer import write_chapter  # type: ignore[import]
-        overrides: Dict[str, object] = {"writing_prompt": prompt}
-        if getattr(args, "llm_provider", None):
-            overrides["ai_provider"] = args.llm_provider
-        if getattr(args, "llm_model", None):
-            overrides["model"] = args.llm_model
-        if getattr(args, "llm_api_key", None):
-            provider = getattr(args, "llm_provider", "") or "openai"
-            if provider == "openai":
-                overrides["openai_api_key"] = args.llm_api_key
-            elif provider == "anthropic":
-                overrides["anthropic_api_key"] = args.llm_api_key
-            else:
-                overrides["api_key"] = args.llm_api_key
-        result = write_chapter(project_root, chapter_file=chapter_path, config_overrides=overrides, dry_run=False)
-        return bool(result.get("ok"))
-    except Exception:
-        return False
+    return "llm" if _has_llm_config(args, project_root) else "agent"
 
 
 def _calc_skip_density(text: str, paragraphs: List[str]) -> float:
@@ -636,8 +494,10 @@ def make_request_id(args: argparse.Namespace, chapter_path: Path, query: str, ch
         str(args.max_dialogue_ratio),
         str(args.min_sentences),
         str(args.auto_draft),
-        str(args.auto_improve),
         str(args.auto_retry),
+        # 收紧门禁的开关必须进缓存键，否则严格模式会被上一次的缓存结果顶掉
+        str(bool(getattr(args, "require_semantic_pacing", False))),
+        str(getattr(args, "draft_provider", "auto")),
         chapter_hash_before,
     ])
     return sha1_text(raw)
@@ -877,17 +737,7 @@ def init_project_files(project_root: Path, args: argparse.Namespace, overwrite: 
 
 
 def chapter_is_draft_stub(path: Path) -> bool:
-    txt = read_text(path)
-    if STUB_MARKER in txt:
-        return True
-    if BEAT_SHEET_STUB_MARKER in txt:
-        return True
-    if DRAFT_PLACEHOLDER_LINE.search(txt):
-        # 仅在“占位文本很短”时才判定为草稿，避免正文引用“待写”被误判。
-        effective = re.sub(r"\s+", "", txt)
-        if len(effective) <= MAX_STUB_EFFECTIVE_CHARS:
-            return True
-    return False
+    return is_draft_stub_text(read_text(path))
 
 
 def clean_for_stats(text: str) -> str:
@@ -1027,10 +877,25 @@ def evaluate_quality(text: str, args: argparse.Namespace) -> Dict[str, object]:
     }
 
 
+_META_BLOCK_LINE = re.compile(r"(?m)^\s*\[[^\]\n]{1,24}\]\s*$")
+
+
+def prose_safe_query(q: str, limit: int = 120) -> str:
+    """把写作查询压成可安全嵌入正文的一句话。
+
+    writing_query 里带 [相关历史剧情] / [写作约束] 等块，直接插进正文会污染稿件
+    （违反 Iron Law「禁止混淆正文与元信息」），这里截断并清掉标记。
+    """
+    q = _META_BLOCK_LINE.split(q or "")[0]
+    q = re.sub(r"\[[^\]\n]{1,24}\]", "", q)
+    return re.sub(r"\s+", " ", q).strip()[:limit]
+
+
 def generate_draft_text(project_root: Path, chapter_path: Path, query: str, min_chars: int) -> str:
     # 兜底模板：LLM 不可用时使用。用 chapter_no 作随机种子，确保每章开头/结尾不同。
     # 注意：本函数只在 --draft-provider template 或 LLM 调用失败时触发，
     # 正常写作流程应使用 --draft-provider llm。
+    query = prose_safe_query(query) or "这件事"
     chapter_no = chapter_no_from_name(chapter_path.name)
     title = chapter_path.stem.replace('-', ' ')
     names = load_character_names(project_root)
@@ -1180,14 +1045,6 @@ def generate_draft_text(project_root: Path, chapter_path: Path, query: str, min_
     return text
 
 
-def improve_text_minimally(text: str, query: str) -> str:
-    extra = (
-        f"补充推进：围绕“{query}”再加入一段行动结果、一段对话冲突、一段章末钩子，"
-        "确保本章既有情节推进也有角色关系变化。"
-    )
-    return text.rstrip() + "\n\n" + extra + "\n"
-
-
 def _generate_beat_draft(
     project_root: Path,
     chapter_path: Path,
@@ -1195,40 +1052,49 @@ def _generate_beat_draft(
     query: str,
     writing_constraints: Optional[Dict[str, object]],
     args: argparse.Namespace,
+    package_only: bool = False,
 ) -> Tuple[bool, str]:
-    """Beat Sheet 流水线：generate → expand → synthesize。
+    """Beat Sheet 流水线：generate → expand →（可选）synthesize。
 
     返回 (success: bool, mode: str)。
-    成功时 chapter_path 已被写入合成草稿。
-    失败时返回 (False, error_reason)，调用方应回退到普通 draft 模式。
+    package_only=True 时只产出分镜与逐 Beat 扩写提示（供宿主 Agent 写作用），
+    不向 chapter_path 写入任何内容；否则由 LLM 合成草稿并入正文。
     """
-    chapter_goal = query[:200]  # 截断保证参数合法
+    chapter_goal = prose_safe_query(query, limit=200)
 
     pacing_depth = _resolve_pacing_mode(getattr(args, "pacing_mode", "standard"))
 
-    # 从 writing_constraints 提取大纲约束和事件推荐，丰富章节目标描述
-    # 使 beat 骨架 / 扩写 prompt 获得真实的剧情约束而非空泛目标
-    enriched_goal = chapter_goal
-    if writing_constraints:
-        parts: List[str] = [chapter_goal]
-        outline_c = writing_constraints.get("outline_constraints", "")
-        if outline_c:
-            parts.append(f"大纲约束：{str(outline_c)[:120]}")
-        event_rec = writing_constraints.get("event_recommendation", "")
-        if event_rec:
-            parts.append(f"推荐事件：{str(event_rec)[:120]}")
-        graph_ctx = writing_constraints.get("graph_context", "")
-        if graph_ctx:
-            parts.append(f"人物关系：{str(graph_ctx)[:100]}")
-        enriched_goal = " | ".join(p for p in parts if p)[:400]
+    # 章节目标补充可读的约束摘要（不能塞 dict repr，会污染 beat sheet 与扩写提示）
+    enriched_goal = chapter_goal or "推进本章剧情"
+    if isinstance(writing_constraints, dict):
+        parts: List[str] = [enriched_goal]
+        outline_c = writing_constraints.get("outline_constraints")
+        if isinstance(outline_c, dict) and outline_c.get("constraints_prompt"):
+            parts.append(str(outline_c["constraints_prompt"]).strip())
+        anti_c = writing_constraints.get("anti_resolution_constraints")
+        if isinstance(anti_c, dict) and anti_c.get("constraint_prompt"):
+            parts.append(str(anti_c["constraint_prompt"]).strip())
+        event_rec = writing_constraints.get("event_recommendation")
+        if isinstance(event_rec, dict):
+            label = event_rec.get("primary_label") or event_rec.get("primary_type")
+            if label:
+                parts.append(f"本章主事件类型：{label}")
+        graph_ctx = writing_constraints.get("graph_context")
+        if isinstance(graph_ctx, dict) and graph_ctx.get("context_prompt"):
+            parts.append(str(graph_ctx["context_prompt"]).strip())
+        enriched_goal = "\n".join(p for p in parts if p)[:600]
 
     # Step 1: 生成 Beat Sheet 骨架
+    # agent 模式下 goal 保持纯净（约束由写作包 §四 承担）；批处理 LLM 才把约束并入 goal
+    goal_for_sheet = (
+        enriched_goal if _resolve_draft_provider(args, project_root) == "llm" else chapter_goal
+    )
     b_code, _b_out, _b_err, b_payload = run_python(
         SCRIPT_DIR / "beat_sheet_generator.py",
         ["generate",
          "--project-root", str(project_root),
          "--chapter", str(chapter_no),
-         "--chapter-goal", enriched_goal,
+         "--chapter-goal", goal_for_sheet or "推进本章剧情",
          "--pacing-depth", pacing_depth,
          "--beat-count", str(getattr(args, "beat_count", 4))],
     )
@@ -1378,6 +1244,10 @@ def _generate_beat_draft(
         else:
             write_text(beat_file, expand_prompt)
 
+    # package_only：分镜与扩写提示已就绪，正文交给宿主 Agent 写
+    if package_only:
+        return True, "beat_sheet_package"
+
     # Step 3: chapter_synthesizer 合成
     s_code, _s_out, _s_err, s_payload = run_python(
         SCRIPT_DIR / "chapter_synthesizer.py",
@@ -1404,108 +1274,176 @@ def _generate_beat_draft(
     return False, "synthesize_no_output"
 
 
-def _next_fix_block_index(text: str, prefix: str) -> int:
-    """Calculate next fix block index to avoid duplicate numbering across rounds."""
-    matches = [int(m) for m in re.findall(rf"{re.escape(prefix)}(\d+)", text)]
-    return (max(matches) + 1) if matches else 1
+_PROMPT_META_SECTION = re.compile(r"(?ms)^\[[^\]\n]{1,24}\]\s*$.*?(?=^\[|^\*\*|^#{1,6}\s|\Z)")
+
+# 每个 Beat 提示由 chapter_goal 派生，会把整段约束再抄一遍；写作包 §四 已单列，这里按行剔除
+_CONSTRAINT_LINE = re.compile(
+    r"^(?:当前是第\s*\d+\s*章（共|当前卷[：:]|本章推进范围[：:]|本章禁止揭露[：:]|本章必须保留[：:]"
+    r"|重要约束[：:]|必须保留悬念|章末必须留下|张力要求[：:]|本章主事件类型[：:])"
+)
 
 
-def _count_dialogue_chars(text: str) -> int:
-    """Count dialogue characters (text inside Chinese quotation marks)."""
-    return sum(len(m.group(1)) for m in re.finditer(r"[""]([^""]*)[""]", text))
+def _clean_prompt_text(text: str) -> str:
+    """去掉 Beat 提示里与写作包 §一/§四/§五 重复的内容。"""
+    cleaned = _PROMPT_META_SECTION.sub("", text)
+    kept = [
+        ln for ln in cleaned.split("\n")
+        # 本章目标在 §一 已给，且每个 Beat 都抄一遍
+        if not _CONSTRAINT_LINE.match(ln.strip()) and not ln.strip().startswith("**本章目标**")
+    ]
+    cleaned = "\n".join(kept)
+    # 目标行后面残留的空格串一并收干净
+    cleaned = re.sub(r"(?m)^(\*\*(?:本章目标|场景概要)\*\*[：:].*?)[　 ]+$", r"\1", cleaned)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
-def apply_targeted_quality_fix(
+_CHAPTER_TITLE_LINE = re.compile(r"(?m)^#[ \t]*第[ \t]*(\d+)[ \t]*章[ \t\-—_：:]*([^\n]*)$")
+_PLACEHOLDER_NAME_HINTS = ("待写", "开篇待写")
+_MAX_TITLE_CHARS = 40
+
+
+def auto_name_chapter(project_root: Path, chapter_path: Path) -> Path:
+    """把「第N章-待写.md」这类占位文件名换成正文里的真实标题。
+
+    占位文件是流程产物，不是作品；正文写好后继续叫「待写」会误导作者与索引。
+    改名时一并迁移已生成的门禁产物目录（含 Agent 手写的 pacing_review.md）。
+    """
+    if not any(h in chapter_path.stem for h in _PLACEHOLDER_NAME_HINTS):
+        return chapter_path
+    text = read_text(chapter_path)
+    if is_draft_stub_text(text):
+        return chapter_path
+    match = _CHAPTER_TITLE_LINE.search(text)
+    title = re.sub(r'[<>:"/\\|?*]', "", (match.group(2) if match else "").strip()).strip()
+    if not title or len(title) > _MAX_TITLE_CHARS:
+        return chapter_path
+    if any(h in title for h in _PLACEHOLDER_NAME_HINTS):
+        return chapter_path
+    no = chapter_no_from_name(chapter_path.name) or (int(match.group(1)) if match else 0)
+    if no <= 0:
+        return chapter_path
+    target = chapter_path.with_name(f"第{no}章-{title}.md")
+    if target.exists() and target != chapter_path:
+        return chapter_path
+
+    old_slug = slugify(chapter_path.stem)
+    chapter_path.rename(target)
+    gate_root = project_root / "04_editing" / "gate_artifacts"
+    old_dir, new_dir = gate_root / old_slug, gate_root / slugify(target.stem)
+    if old_dir.is_dir() and not new_dir.exists():
+        old_dir.rename(new_dir)
+    return target
+
+
+def write_writing_package(
     project_root: Path,
     chapter_path: Path,
-    quality: Dict[str, object],
-    args: argparse.Namespace,
-    query: str,
-) -> List[str]:
-    txt = read_text(chapter_path).rstrip()
-    failures_raw = quality.get("failures", [])
-    failures = [str(x) for x in failures_raw] if isinstance(failures_raw, list) else []
-    actions: List[str] = []
+    writing_query: str,
+    writing_constraints: Optional[Dict[str, object]],
+    min_chars: int = 0,
+) -> str:
+    """为宿主 Agent 准备写作包：分镜 + 扩写提示 + 约束 + 参考片段。
 
-    paragraph_count_raw = quality.get("paragraph_count", 0)
-    sentence_count_raw = quality.get("sentence_count", 0)
-    paragraph_count = int(paragraph_count_raw) if isinstance(paragraph_count_raw, (int, float, str)) else 0
-    sentence_count = int(sentence_count_raw) if isinstance(sentence_count_raw, (int, float, str)) else 0
+    CLI 不写正文（子进程拿不到宿主模型），只把写这一章需要的东西摊在一处。
+    """
+    ch_no = chapter_no_from_name(chapter_path.name)
+    beats_dir = project_root / "00_memory" / "beats"
+    sheet = load_json(beats_dir / f"ch{ch_no:04d}_beat_sheet.json", default={})
+    expand_files = sorted(beats_dir.glob(f"ch{ch_no:04d}_beat*_expand.md"))
 
-    # 跨轮次编号接续
-    next_paragraph_idx = _next_fix_block_index(txt, "\u8865\u5145\u6bb5\u843d")
-    next_progress_idx = _next_fix_block_index(txt, "\u8865\u5145\u63a8\u8fdb")
+    # 章节目标只留纯剧情意图，不要把 [相关历史剧情]/[写作约束] 带进来
+    goal = prose_safe_query(str(sheet.get("chapter_goal") or "")) or prose_safe_query(writing_query)
+    rag_section = ""
+    rag_match = re.search(r"(?ms)^\[相关历史剧情\]\s*$.*?(?=^\[|\Z)", writing_query)
+    if rag_match:
+        # 去掉块标题，节标题已说明用途
+        rag_section = re.sub(r"(?m)^\[相关历史剧情\]\s*$\n?", "", rag_match.group(0)).strip()
 
-    # 优先处理 pacing_skip_density_critical
-    if any(
-        f.startswith("pacing_skip_density_critical") or f.startswith("pacing_skip_density_too_high")
-        for f in failures
-    ):
-        prompt = _build_pacing_rewrite_prompt(query, failures)
-        if _rewrite_chapter_with_llm(project_root, chapter_path, args, prompt):
-            txt = read_text(chapter_path).rstrip()
-            txt = _normalize_paragraph_variance(_rebalance_dialogue_heavy_text(txt, query))
-            actions.append("LLM rewrite for high skip density")
-        else:
-            txt = _normalize_paragraph_variance(_rebalance_dialogue_heavy_text(txt, query))
-            txt += (
-                "\n\n"
-                f"[Scene expansion] Describe the execution of '{query}' with action steps, "
-                "environment resistance, immediate feedback, and new decisions. "
-                "Do not use summary skip phrases."
+    lines: List[str] = [
+        "# 本章写作包",
+        "",
+        f"- 目标章节：`{chapter_path}`",
+        f"- 章节号：{ch_no}",
+    ]
+    beat_total = sum(
+        int(b.get("word_target") or 0) for b in sheet.get("beats", []) if isinstance(b, dict)
+    )
+    if min_chars > 0:
+        lines.append(f"- **字数下限：{min_chars} 字**（门禁硬校验，低于此直接判失败）")
+    if beat_total > 0:
+        lines.append(f"- 分镜建议篇幅：约 {beat_total} 字（各 Beat word_target 之和）")
+    lines += [
+        "",
+        "## 一、本章目标",
+        goal or "（未指定，按下方参考剧情自行推进）",
+        "",
+        "## 二、分镜（按顺序写，不要跳段）",
+    ]
+    beats = [b for b in sheet.get("beats", []) if isinstance(b, dict)]
+    if beats:
+        for b in beats:
+            summary = str(b.get("summary", "")).strip()
+            if not summary or "[待填充]" in summary:
+                summary = "（场景由你按本节扩写提示设计）"
+            lines.append(
+                f"{b.get('beat_id')}. [{b.get('type', '')}] {summary}"
+                f"　字数≈{b.get('word_target', '')}"
             )
-            actions.append("Fallback scene expansion for skip density")
+    else:
+        lines.append("（beats 未生成，按本章目标直接写）")
 
-    if any(f.startswith("paragraph_count<") for f in failures):
-        missing = max(1, args.min_paragraphs - paragraph_count)
-        blocks = []
-        for i in range(missing):
-            blocks.append(
-                f"补充段落{i+1}：围绕“{query}”推进一小步行动结果，并明确本段的因果关系。"
-                "角色需要做出可验证选择，以便下一章承接。"
-            )
-        txt += "\n\n" + "\n\n".join(blocks)
-        actions.append(f"补足段落数量 +{missing}")
+    lines += ["", "## 三、逐 Beat 扩写提示（已内联，按顺序写）"]
+    if expand_files:
+        seen_blocks: Dict[str, int] = {}
+        for f in expand_files:
+            body = _clean_prompt_text(read_text(f))
+            if not body:
+                continue
+            beat_no_match = re.search(r"_beat(\d+)_expand\.md$", f.name)
+            beat_no = int(beat_no_match.group(1)) if beat_no_match else 0
+            rendered: List[str] = []
+            for block in re.split(r"(?m)^(?=###\s)", body):
+                if not block.strip():
+                    continue
+                key = re.sub(r"\s+", " ", block.strip())
+                heading = block.strip().split("\n", 1)[0]
+                if key in seen_blocks:
+                    rendered.append(f"{heading}\n（同上，见 Beat {seen_blocks[key]}）")
+                else:
+                    seen_blocks[key] = beat_no
+                    rendered.append(block.strip())
+            lines += ["", "\n\n".join(rendered), ""]
+        lines.append(f"> 原始文件备查：`{beats_dir}`")
+    else:
+        lines.append("（无扩写提示文件，按分镜自行展开）")
 
-    if any(f.startswith("sentence_count<") or f.startswith("sentence_count_too_low") for f in failures):
-        missing = max(1, args.min_sentences - sentence_count)
-        short = " ".join(["他迅速复盘线索。她立即提出质疑。两人决定先验证坐标。"] * max(1, missing // 3))
-        txt += "\n\n" + short
-        actions.append(f"补足句子数量 +{missing}")
+    if writing_constraints:
+        constraint_lines: List[str] = []
+        outline_c = writing_constraints.get("outline_constraints")
+        if isinstance(outline_c, dict) and outline_c.get("constraints_prompt"):
+            constraint_lines.append(str(outline_c["constraints_prompt"]).strip())
+        anti_c = writing_constraints.get("anti_resolution_constraints")
+        if isinstance(anti_c, dict) and anti_c.get("constraint_prompt"):
+            constraint_lines.append(str(anti_c["constraint_prompt"]).strip())
+        if constraint_lines:
+            lines += ["", "## 四、硬约束"] + constraint_lines
 
-    if any(f.startswith("dialogue_ratio<") or f.startswith("dialogue_ratio_too_low") for f in failures):
-        txt += (
-            "\n\n"
-            f"“先别下结论，”同伴压低声音，“{query}这条线还缺最后一块证据。”"
-            "主角点头：“那就按时间线回查，每一步都留痕。”"
-        )
-        actions.append("补足对话占比")
+    if rag_section:
+        lines += ["", "## 五、参考剧情（仅供理解前后文，不要抄进正文）", rag_section]
 
-    if any(f.startswith("dialogue_ratio>") or f.startswith("dialogue_ratio_too_high") for f in failures):
-        txt += (
-            "\n\n"
-            "叙述补偿：两人将对话结论写入行动清单，逐项标记风险等级与验证顺序，"
-            "避免口头信息过载导致剧情推进失焦。"
-        )
-        actions.append("稀释过高对话占比")
+    lines += [
+        "",
+        "## 六、交付要求",
+        "- 正文直接写入目标章节文件，替换整个文件内容。",
+        "- 只写小说正文：不要出现 `[写作约束]`、`（注：）`、TODO、写作指令、文件路径或脚本输出。",
+        "- 人名必须是真实角色名；不得出现「主角」「同伴」「配角」等占位名。",
+        "- 写完重跑 `/继续写` 或 `/门禁检查`，由门禁判定是否可发布。",
+        "",
+    ]
 
-    # 最后兜底字符数
-    cur_chars = len(re.sub(r"\s+", "", clean_for_stats(txt)))
-    if cur_chars < args.min_chars:
-        needed = args.min_chars - cur_chars
-        repeat = max(1, needed // 80)
-        extra = []
-        for i in range(repeat):
-            extra.append(
-                f"补充推进{i+1}：围绕“{query}”补写一段行动执行、风险反馈与下一步目标，"
-                "确保情节、人物与线索三者同时前进。"
-            )
-        txt += "\n\n" + "\n\n".join(extra)
-        actions.append(f"补足字符数 +{needed}")
-
-    if actions:
-        write_text(chapter_path, txt)
-    return actions
+    target = project_root / "00_memory" / "next_chapter_task.md"
+    write_text(target, "\n".join(lines))
+    return str(target)
 
 
 def write_quality_report(gate_dir: Path, quality_before: Dict[str, object], quality_after: Dict[str, object]) -> Path:
@@ -1695,12 +1633,15 @@ def run_gate_check(
     chapter_path: Path,
     pacing_tier: Optional[str] = None,
     pacing_event_types: str = "",
+    require_semantic_pacing: bool = False,
 ) -> Tuple[int, Dict[str, object]]:
     extra: List[str] = []
     if pacing_tier:
         extra.extend(["--pacing-tier", pacing_tier])
     if pacing_event_types:
         extra.extend(["--pacing-event-types", pacing_event_types])
+    if require_semantic_pacing:
+        extra.append("--require-semantic-pacing")
     code, out, err, payload = run_python(
         SCRIPT_DIR / "chapter_gate_check.py",
         ["--project-root", str(project_root), "--chapter-file", str(chapter_path), *extra],
@@ -1708,6 +1649,16 @@ def run_gate_check(
     if payload is not None:
         return code, payload
     return code, {"stdout": out, "stderr": err}
+
+
+def _failed_on_body_purity(gate_payload: object, draft_provider_used: str) -> bool:
+    """门禁是否因正文污染而失败（模板兜底稿的典型结局）。"""
+    if draft_provider_used not in {"template", "beat_sheet_template"}:
+        return False
+    if not isinstance(gate_payload, dict):
+        return False
+    failures = gate_payload.get("failures") or []
+    return any(str(f).startswith("body_metadata_purity") for f in failures)
 
 
 def run_repair_plan(project_root: Path, chapter_path: Path) -> Optional[Dict[str, object]]:
@@ -1796,15 +1747,6 @@ def auto_fix_after_gate_failure(
     ):
         need_rebuild_gate_artifacts = True
 
-    if "quality_baseline" in fail_text and args.auto_fix_quality:
-        old_quality = dict(quality)
-        quality_actions = apply_targeted_quality_fix(project_root, chapter_path, quality, args, query)
-        if quality_actions:
-            actions.extend([f"质量最小修复：{x}" for x in quality_actions])
-            quality = evaluate_quality(read_text(chapter_path), args)
-            write_quality_report(gate_dir, old_quality, quality)
-            need_rebuild_gate_artifacts = True
-
     # 所有修复完成后统一重建门禁产物，确保时间戳晚于章节文件
     if need_rebuild_gate_artifacts:
         write_gate_artifacts(project_root, chapter_path, query, quality, query_payload)
@@ -1855,6 +1797,7 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
     chapter_path: Optional[Path] = None
     original_chapter_path: Optional[Path] = None
     chapter_hash_before = ""
+    chapter_renamed_from: Optional[str] = None
     snapshot_path: Optional[Path] = None
     rollback_applied = False
     idempotent_hit = False
@@ -1892,9 +1835,15 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
                 f"# {chapter_path.stem.replace('-', ' ')}\n\n<!-- NOVEL_FLOW_STUB -->\n\n## 正文\n[待写]\n",
             )
 
+        # 正文已写好的占位章（第N章-待写.md）在这里改回真实标题
+        renamed_path = auto_name_chapter(project_root, chapter_path)
+        chapter_renamed_from = str(chapter_path) if renamed_path != chapter_path else None
+        if chapter_renamed_from:
+            chapter_path = renamed_path
+            original_chapter_path = chapter_path
+
         chapter_hash_before = file_sha1(chapter_path)
         request_id = make_request_id(args, chapter_path, query, chapter_hash_before, project_root)
-
         if args.idempotent_cache and not args.force_run:
             cache = load_continue_cache(flow_dir)
             entries_raw = cache.get("entries")
@@ -1996,24 +1945,27 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
 
         auto_draft_applied = False
         draft_provider_used = _resolve_draft_provider(args, project_root)
-        fallback_applied = False
         llm_error_msg = None
+        writing_package: Optional[str] = None
 
-        # Beat Sheet 流水线（优先于普通 draft，默认开启）
-        if getattr(args, "use_beat_sheet", True) and chapter_is_draft_stub(chapter_path):
+        chapter_stub = chapter_is_draft_stub(chapter_path)
+
+        # Beat Sheet 分镜：为写作者准备骨架与逐 Beat 扩写提示（默认不写正文）
+        if getattr(args, "use_beat_sheet", True) and chapter_stub:
             _beat_chapter_no = chapter_no_from_name(chapter_path.name)
             if _beat_chapter_no > 0:
                 beat_applied, beat_mode = _generate_beat_draft(
                     project_root, chapter_path, _beat_chapter_no,
                     writing_query, writing_constraints, args,
+                    package_only=(draft_provider_used != "llm"),
                 )
-                if beat_applied:
+                if beat_applied and beat_mode == "beat_sheet_llm":
                     auto_draft_applied = True
-                    draft_provider_used = beat_mode
+                    draft_provider_used = "beat_sheet_llm"
 
         if chapter_is_draft_stub(chapter_path) and args.auto_draft:
             if draft_provider_used == "llm":
-                # 尝试使用 LLM 写作
+                # 批处理模式：调用外部 LLM 成稿（需显式配置 provider/key）
                 try:
                     from novel_chapter_writer import write_chapter
                     config_overrides = {}
@@ -2042,54 +1994,23 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
                         draft_provider_used = "llm"
                         auto_draft_applied = True
                     else:
-                        # LLM 调用失败，回退到模板
+                        # 不再回退模板：宁可不写，也不往正文里塞拼接稿
                         llm_error_msg = llm_result.get("error", "unknown error")
-                        draft = generate_draft_text(project_root, chapter_path, query, min_chars=args.min_chars)
-                        write_text(chapter_path, draft)
-                        draft_provider_used = "template"
-                        fallback_applied = True
-                        auto_draft_applied = True
-
                 except Exception as e:
-                    # 导入或调用异常，回退到模板
                     llm_error_msg = str(e)
-                    draft = generate_draft_text(project_root, chapter_path, query, min_chars=args.min_chars)
-                    write_text(chapter_path, draft)
-                    draft_provider_used = "template"
-                    fallback_applied = True
-                    auto_draft_applied = True
-            elif draft_provider_used == "beat_sheet_template":
-                # beat_sheet_template 模式：beat 合成已产出结构化写作指引（BEAT_SHEET_STUB），
-                # 用 beat sheet JSON 中的 chapter_goal 和各 beat 摘要构造富语义 query，
-                # 生成比纯泛型模板更贴合剧情的草稿，保留 beat 结构信息。
-                beat_sheet_json = load_json(
-                    project_root / "00_memory" / "beats"
-                    / f"ch{chapter_no_from_name(chapter_path.name):04d}_beat_sheet.json",
-                    default={},
-                )
-                beat_goal = beat_sheet_json.get("chapter_goal", "") or query
-                beat_summaries = [
-                    str(b.get("summary", ""))
-                    for b in beat_sheet_json.get("beats", [])
-                    if isinstance(b, dict) and b.get("summary") and "[待填充]" not in str(b.get("summary", ""))
-                ]
-                enriched_beat_query = beat_goal
-                if beat_summaries:
-                    enriched_beat_query += "；" + "、".join(beat_summaries[:4])
-                draft = generate_draft_text(
-                    project_root, chapter_path,
-                    enriched_beat_query[:300],
-                    min_chars=args.min_chars,
-                )
-                write_text(chapter_path, draft)
-                auto_draft_applied = True
-            else:
-                # 纯 template 模式
+            elif draft_provider_used == "template":
+                # 显式 --draft-provider template：仅脚手架/调试用途，产物不可发布
                 draft = generate_draft_text(project_root, chapter_path, query, min_chars=args.min_chars)
                 write_text(chapter_path, draft)
                 auto_draft_applied = True
 
+
         draft_mode = chapter_is_draft_stub(chapter_path)
+        if draft_mode:
+            writing_package = write_writing_package(
+                project_root, chapter_path, writing_query, writing_constraints,
+                min_chars=int(args.min_chars),
+            )
 
         chapter_id = slugify(chapter_path.stem)
         gate_dir = project_root / "04_editing" / "gate_artifacts" / chapter_id
@@ -2103,14 +2024,6 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
 
         quality_before = evaluate_quality(read_text(chapter_path), args)
         quality_after = quality_before
-        improve_rounds = 0
-        if not draft_mode and args.auto_improve:
-            while (not quality_after["passed"]) and improve_rounds < args.auto_improve_rounds:
-                txt = read_text(chapter_path)
-                write_text(chapter_path, improve_text_minimally(txt, writing_query))
-                quality_after = evaluate_quality(read_text(chapter_path), args)
-                improve_rounds += 1
-
         quality_report = write_quality_report(gate_dir, quality_before, quality_after)
 
         gate_payload: Optional[Dict[str, object]] = None
@@ -2126,7 +2039,8 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
         if not draft_mode:
             write_gate_artifacts(project_root, chapter_path, writing_query, quality_after, q_payload)
             _, gate_payload = run_gate_check(
-                project_root, chapter_path, _gate_pacing_tier, _gate_pacing_et_str
+                project_root, chapter_path, _gate_pacing_tier, _gate_pacing_et_str,
+                getattr(args, "require_semantic_pacing", False),
             )
             gate_passed_final = bool(gate_payload.get("passed")) if isinstance(gate_payload, dict) else False
 
@@ -2146,7 +2060,8 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
                 retry_actions.extend(actions)
                 retry_rounds += 1
                 _, gate_payload = run_gate_check(
-                    project_root, chapter_path, _gate_pacing_tier, _gate_pacing_et_str
+                    project_root, chapter_path, _gate_pacing_tier, _gate_pacing_et_str,
+                    getattr(args, "require_semantic_pacing", False),
                 )
                 gate_passed_final = bool(gate_payload.get("passed")) if isinstance(gate_payload, dict) else False
 
@@ -2287,17 +2202,17 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
             "command": "continue-write",
             "project_root": str(project_root),
             "chapter_file": str(chapter_path) if chapter_path else "",
+            "chapter_renamed_from": chapter_renamed_from,
             "pacing_mode": pacing_mode,
             "created_chapter_stub": created_chapter_stub,
             "auto_draft_applied": auto_draft_applied,
             "draft_provider_used": draft_provider_used,
-            "fallback_applied": fallback_applied,
+            "writing_package": writing_package,
             "llm_error_msg": llm_error_msg,
             "awaiting_draft": draft_mode,
             "quality_before": quality_before,
             "quality_after": quality_after,
             "quality_report": str(quality_report),
-            "auto_improve_rounds_used": improve_rounds,
             "query_result": q_payload if q_payload is not None else {"stdout": q_out, "stderr": q_err},
             "gate_result": gate_payload,
             "gate_passed_final": gate_passed_final,
@@ -2320,12 +2235,22 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
             "style_update_file": style_update_file if gate_passed_final and chapter_path else None,
         }
 
-        if draft_mode and not args.auto_draft:
-            result["next_step"] = "章节仍是占位草稿，请补全正文后再次执行 /继续写，或启用 --auto-draft。"
+        if draft_mode and llm_error_msg:
+            result["next_step"] = (
+                f"外部 LLM 写作失败（{llm_error_msg}），正文未生成。请由你（当前 Agent）按 "
+                f"{writing_package} 写出正文，或修好 LLM 配置后重跑 /继续写。"
+            )
         elif draft_mode:
-            result["next_step"] = "已尝试自动成稿但仍检测到占位标记，请手动补全正文后再执行。"
-        elif fallback_applied and llm_error_msg:
-            result["next_step"] = f"LLM写作失败({llm_error_msg})，已自动回退到模板模式。请检查API配置后重试。"
+            result["next_step"] = (
+                f"写作包已就绪：{writing_package}。请由你（当前 Agent）按该写作包把正文写进 "
+                f"{chapter_path}（只写小说正文，不要写元信息、占位人名或写作指令），"
+                "写完重跑 /继续写 或 /门禁检查。"
+            )
+        elif _failed_on_body_purity(gate_payload, draft_provider_used):
+            result["next_step"] = (
+                "模板脚手架稿不可发布（正文由 beat 骨架与占位名拼装）。"
+                "请由主 Agent 按 00_memory/beats/ 下的 beat sheet 写出正文后重跑 /继续写。"
+            )
         elif gate_passed_final:
             result["next_step"] = "章节已通过门禁，可进入下一章。"
         else:
@@ -2740,17 +2665,14 @@ def parse_args() -> argparse.Namespace:
     p_cont.add_argument("--candidate-k", type=int, default=12)
     p_cont.add_argument("--force-retrieval", action="store_true")
     p_cont.add_argument("--force-run", action="store_true", help="忽略幂等缓存，强制执行完整流程")
-    p_cont.add_argument("--auto-draft", dest="auto_draft", action="store_true", default=True)
-    p_cont.add_argument("--no-auto-draft", dest="auto_draft", action="store_false")
-    p_cont.add_argument("--auto-improve", dest="auto_improve", action="store_true", default=True)
-    p_cont.add_argument("--no-auto-improve", dest="auto_improve", action="store_false")
+    p_cont.add_argument("--auto-draft", dest="auto_draft", action="store_true", default=True,
+                        help="允许 CLI 侧成稿（agent 模式下该开关无效：正文由宿主 Agent 写）")
+    p_cont.add_argument("--no-auto-draft", dest="auto_draft", action="store_false",
+                        help="不尝试任何自动成稿，直接产出写作包等 Agent 写")
     p_cont.add_argument("--auto-retry", dest="auto_retry", action="store_true", default=True)
     p_cont.add_argument("--no-auto-retry", dest="auto_retry", action="store_false")
-    p_cont.add_argument("--auto-fix-quality", dest="auto_fix_quality", action="store_true", default=True)
-    p_cont.add_argument("--no-auto-fix-quality", dest="auto_fix_quality", action="store_false")
     p_cont.add_argument("--auto-fix-kb-misplaced", dest="auto_fix_kb_misplaced", action="store_true", default=True)
     p_cont.add_argument("--no-auto-fix-kb-misplaced", dest="auto_fix_kb_misplaced", action="store_false")
-    p_cont.add_argument("--auto-improve-rounds", type=int, default=1)
     p_cont.add_argument("--max-auto-retry-rounds", type=int, default=2)
     p_cont.add_argument("--rollback-on-failure", dest="rollback_on_failure", action="store_true", default=True)
     p_cont.add_argument("--no-rollback-on-failure", dest="rollback_on_failure", action="store_false")
@@ -2778,7 +2700,8 @@ def parse_args() -> argparse.Namespace:
     p_cont.add_argument("--auto-research", dest="auto_research", action="store_true", default=True,
                         help="写前自动检测知识缺口并提示调研")
     p_cont.add_argument("--draft-provider", choices=["auto", "template", "llm"], default="auto",
-                        help="Draft strategy: auto (Two-Phase if LLM configured), template, or llm")
+                        help="谁写正文：auto=有 LLM 配置则 llm，否则 agent（交宿主 Agent 写，默认）；"
+                             "template=占位脚手架（仅调试，不可发布）；llm=调用外部 LLM 批处理成稿")
     p_cont.add_argument("--llm-provider", default=None,
                         help="LLM提供商(openai/anthropic/kimi/glm/minimax)，需配合--draft-provider llm")
     p_cont.add_argument("--llm-model", default=None,
@@ -2806,6 +2729,9 @@ def parse_args() -> argparse.Namespace:
     p_cont.add_argument("--no-research", dest="auto_research",
                         action="store_false",
                         help="禁用写前知识缺口调研")
+    p_cont.add_argument("--require-semantic-pacing", dest="require_semantic_pacing",
+                        action="store_true", default=False,
+                        help="门禁强制要求 /节奏审查 产出的 pacing_review.md；缺失则判失败而非自动降级")
     p_cont.add_argument("--use-beat-sheet", dest="use_beat_sheet",
                         action="store_true", default=True,
                         help="使用 Beat Sheet 流水线写作（默认开启）")

@@ -12,8 +12,8 @@ usage() {
 
 示例：
   install-portable-skill.sh --tool codex
-  install-portable-skill.sh --tool claude-code --dest ~/.claude/skills/novel-claude-ai
-  install-portable-skill.sh --tool gemini-cli --dest ~/.gemini/skills/novel-claude-ai --force
+  install-portable-skill.sh --tool claude-code --dest ~/.claude/skills/novel-os
+  install-portable-skill.sh --tool gemini-cli --dest ~/.gemini/skills/novel-os --force
 USAGE
 }
 
@@ -54,11 +54,11 @@ SRC_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 default_dest() {
   case "$1" in
-    codex) echo "$HOME/.codex/skills/novel-claude-ai" ;;
-    claude-code) echo "$HOME/.claude/skills/novel-claude-ai" ;;
-    opencode) echo "$HOME/.opencode/skills/novel-claude-ai" ;;
-    gemini-cli) echo "$HOME/.gemini/skills/novel-claude-ai" ;;
-    antigravity) echo "$HOME/.antigravity/skills/novel-claude-ai" ;;
+    codex) echo "$HOME/.codex/skills/novel-os" ;;
+    claude-code) echo "$HOME/.claude/skills/novel-os" ;;
+    opencode) echo "$HOME/.opencode/skills/novel-os" ;;
+    gemini-cli) echo "$HOME/.gemini/skills/novel-os" ;;
+    antigravity) echo "$HOME/.antigravity/skills/novel-os" ;;
     *)
       echo "不支持的工具: $1" >&2
       exit 2
@@ -108,8 +108,6 @@ fi
 mkdir -p "$DEST"
 
 copy_core() {
-  cp "$SRC_DIR/novel-creator.md" "$DEST/"
-  cp "$SRC_DIR/novel-creator.json" "$DEST/"
   cp "$SRC_DIR/SKILL.md" "$DEST/"
   cp -R "$SRC_DIR/templates" "$DEST/"
   cp -R "$SRC_DIR/references" "$DEST/"
@@ -164,8 +162,8 @@ TXT
       cat > "$DEST/CLAUDE.md" <<'TXT'
 # Claude Code 入口
 
-请将本目录作为技能目录使用，核心入口为 `SKILL.md` 与 `novel-creator.md`。
-章节发布必须执行：`/更新记忆 -> /检查一致性 -> /风格校准 -> /校稿 -> /门禁检查`。
+请将本目录作为技能目录使用，核心入口为 `SKILL.md`。
+章节发布必须执行：`/更新记忆 -> /检查一致性 -> /节奏审查 -> /风格校准 -> /校稿 -> /门禁检查`。
 新手建议：`/新手模式 开启 -> /一键开书 -> /继续写`；失败时执行 `/修复本章`。
 TXT
       ;;
@@ -174,7 +172,7 @@ TXT
 # OpenCode 入口
 
 将本目录作为技能包加载，入口说明见 `SKILL.md`。
-章节发布必须执行：`/更新记忆 -> /检查一致性 -> /风格校准 -> /校稿 -> /门禁检查`。
+章节发布必须执行：`/更新记忆 -> /检查一致性 -> /节奏审查 -> /风格校准 -> /校稿 -> /门禁检查`。
 新手建议：`/新手模式 开启 -> /一键开书 -> /继续写`；失败时执行 `/修复本章`。
 TXT
       ;;
@@ -183,7 +181,7 @@ TXT
 # Gemini CLI 入口
 
 将本目录作为项目提示技能目录，入口说明见 `SKILL.md`。
-章节发布必须执行：`/更新记忆 -> /检查一致性 -> /风格校准 -> /校稿 -> /门禁检查`。
+章节发布必须执行：`/更新记忆 -> /检查一致性 -> /节奏审查 -> /风格校准 -> /校稿 -> /门禁检查`。
 新手建议：`/新手模式 开启 -> /一键开书 -> /继续写`；失败时执行 `/修复本章`。
 TXT
       ;;
@@ -192,7 +190,7 @@ TXT
 # Antigravity 入口
 
 将本目录作为代理技能目录，入口说明见 `SKILL.md`。
-章节发布必须执行：`/更新记忆 -> /检查一致性 -> /风格校准 -> /校稿 -> /门禁检查`。
+章节发布必须执行：`/更新记忆 -> /检查一致性 -> /节奏审查 -> /风格校准 -> /校稿 -> /门禁检查`。
 新手建议：`/新手模式 开启 -> /一键开书 -> /继续写`；失败时执行 `/修复本章`。
 TXT
       ;;
@@ -205,13 +203,12 @@ write_manifest() {
   "tool": "$TOOL",
   "installed_at": "$(date '+%Y-%m-%d %H:%M:%S')",
   "entry_files": [
-    "SKILL.md",
-    "novel-creator.md",
-    "novel-creator.json"
+    "SKILL.md"
   ],
   "chapter_release_pipeline": [
     "/更新记忆",
     "/检查一致性",
+    "/节奏审查",
     "/风格校准",
     "/校稿",
     "/门禁检查"

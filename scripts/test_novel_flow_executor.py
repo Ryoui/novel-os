@@ -25,6 +25,16 @@ def run_cmd(args):
     return proc.returncode, payload
 
 
+def _clean_chapter_body() -> str:
+    """构造一段干净正文：真实人名、有对白、段落互不重复、过 2500 字。"""
+    return "# 第2章 短章\n\n" + "\n\n".join(
+        f"第{i}次走进旧港区那间仓库，陈砚先数了一遍墙上的钉子，{i + 12}根，一根没少。"
+        f"他把手电压低，光柱贴着地皮扫过去，照见一层新落的灰。"
+        f"周遇在门口守着，回头低声说：“这是第{i}回了，脚印还没干，有人比我们先到。”"
+        for i in range(1, 31)
+    ) + "\n"
+
+
 class TestNovelFlowExecutor(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="novel_flow_exec_test_"))
@@ -48,7 +58,8 @@ class TestNovelFlowExecutor(unittest.TestCase):
         self.assertTrue((self.tmpdir / "00_memory" / "novel_plan.md").exists())
         self.assertTrue((self.tmpdir / "03_manuscript" / "第1章-开篇待写.md").exists())
 
-    def test_continue_write_auto_draft_and_gate(self):
+    def test_continue_write_awaits_agent_draft(self):
+        """无 LLM 时不再伪造正文：产出写作包，等宿主 Agent 写（A 方案）。"""
         run_cmd([
             "one-click",
             "--project-root",
@@ -58,24 +69,75 @@ class TestNovelFlowExecutor(unittest.TestCase):
             "--genre",
             "悬疑",
             "--idea",
-            "主角在旧港区发现失踪名单",
+            "陈砚在旧港区发现失踪名单",
         ])
         _, payload = run_cmd([
             "continue-write",
             "--project-root",
             str(self.tmpdir),
             "--query",
-            "主角在站台发现名单并与同伴发生冲突",
+            "陈砚在站台发现名单，与周遇发生冲突",
         ])
         self.assertTrue(payload.get("ok"))
-        self.assertFalse(payload.get("awaiting_draft"))
+        self.assertTrue(payload.get("awaiting_draft"))
+        self.assertFalse(payload.get("auto_draft_applied"))
+        self.assertEqual(payload.get("draft_provider_used"), "agent")
+        self.assertIsNone(payload.get("llm_error_msg"))
+
+        # 正文保持占位，CLI 不得自行成稿
+        chapter_text = Path(payload["chapter_file"]).read_text(encoding="utf-8")
+        self.assertIn("NOVEL_FLOW_STUB", chapter_text)
+        self.assertNotIn("[写作约束]", chapter_text)
+
+        # 写作包必须落盘，并明确交付要求
+        package = Path(payload["writing_package"])
+        self.assertTrue(package.exists(), f"写作包缺失: {package}")
+        package_text = package.read_text(encoding="utf-8")
+        self.assertIn("本章写作包", package_text)
+        self.assertIn("本章目标", package_text)
+        self.assertIn("交付要求", package_text)
+        self.assertIn("占位名", package_text)
+        # 扩写提示必须内联，而不是只给路径；且不得残留约束块标题行
+        self.assertIn("扩写指令", package_text)
+        self.assertIn("通用扩写要求", package_text)
+        self.assertNotIn("\n[写作约束]", package_text)
+        self.assertNotIn("\n[相关历史剧情]", package_text)
+        self.assertIn("next_step", payload)
+        self.assertIn("写作包已就绪", payload["next_step"])
+
+    def test_continue_write_template_provider_is_explicit_only(self):
+        """--draft-provider template 仍可用，但产物会被正文纯净度判死。"""
+        run_cmd([
+            "one-click",
+            "--project-root",
+            str(self.tmpdir),
+            "--title",
+            "雾港回声",
+            "--genre",
+            "悬疑",
+            "--idea",
+            "陈砚在旧港区发现失踪名单",
+        ])
+        _, payload = run_cmd([
+            "continue-write",
+            "--project-root",
+            str(self.tmpdir),
+            "--query",
+            "陈砚在站台发现名单，与周遇发生冲突",
+            "--draft-provider",
+            "template",
+            "--no-rollback-on-failure",
+        ])
         self.assertTrue(payload.get("auto_draft_applied"))
-        self.assertTrue(payload.get("gate_passed_final"))
-        meta_file = self.tmpdir / "00_memory" / "retrieval" / "chapter_meta" / "第2章-待写.meta.json"
-        self.assertTrue(meta_file.exists())
-        meta = json.loads(meta_file.read_text(encoding="utf-8"))
-        self.assertEqual(meta.get("chapter_file"), "第2章-待写.md")
-        self.assertIn("events", meta)
+        self.assertFalse(payload.get("gate_passed_final"))
+        failures = (payload.get("gate_result") or {}).get("failures") or []
+        self.assertTrue(
+            any(str(f).startswith("body_metadata_purity") for f in failures),
+            f"脚手架稿应被正文纯净度判死，实际 failures={failures}",
+        )
+        chapter_text = Path(payload["chapter_file"]).read_text(encoding="utf-8")
+        self.assertNotIn("[写作约束]", chapter_text)
+        self.assertNotIn("[相关历史剧情]", chapter_text)
 
     def test_continue_write_auto_retry_fix_kb(self):
         run_cmd([
@@ -91,18 +153,22 @@ class TestNovelFlowExecutor(unittest.TestCase):
         ])
         kb_bad = self.tmpdir / "02_knowledge_base" / "第99章-误放.md"
         kb_bad.write_text("误放章节", encoding="utf-8")
+        chapter = self.tmpdir / "03_manuscript" / "第2章-短章.md"
+        chapter.write_text(_clean_chapter_body(), encoding="utf-8")
 
         _, payload = run_cmd([
             "continue-write",
             "--project-root",
             str(self.tmpdir),
+            "--chapter-file",
+            str(chapter),
             "--query",
-            "主角在站台发现名单并与同伴发生冲突",
+            "陈砚继续追查名单",
+            "--min-paragraphs",
+            "2",
         ])
-        self.assertTrue(payload.get("ok"))
-        self.assertTrue(payload.get("gate_passed_final"))
         actions = payload.get("auto_retry_actions", [])
-        self.assertTrue(any("迁移误放章节" in x for x in actions))
+        self.assertTrue(any("迁移误放章节" in x for x in actions), actions)
         self.assertFalse(kb_bad.exists())
 
     def test_continue_write_idempotent_cache_hit(self):
@@ -117,31 +183,28 @@ class TestNovelFlowExecutor(unittest.TestCase):
             "--idea",
             "主角在旧港区发现失踪名单",
         ])
-        _, p1 = run_cmd([
-            "continue-write",
-            "--project-root",
-            str(self.tmpdir),
-            "--query",
-            "主角在站台发现名单并与同伴发生冲突",
-        ])
-        _, p2 = run_cmd([
+        chapter = self.tmpdir / "03_manuscript" / "第2章-短章.md"
+        chapter.write_text(_clean_chapter_body(), encoding="utf-8")
+        common_args = [
             "continue-write",
             "--project-root",
             str(self.tmpdir),
             "--chapter-file",
-            p1.get("chapter_file"),
+            str(chapter),
             "--query",
-            "主角在站台发现名单并与同伴发生冲突",
-        ])
-        _, p3 = run_cmd([
-            "continue-write",
-            "--project-root",
-            str(self.tmpdir),
-            "--chapter-file",
-            p1.get("chapter_file"),
-            "--query",
-            "主角在站台发现名单并与同伴发生冲突",
-        ])
+            "陈砚继续调查失踪名单",
+            "--no-auto-draft",
+            "--no-auto-retry",
+            "--min-chars",
+            "100",
+            "--min-paragraphs",
+            "2",
+            "--min-sentences",
+            "3",
+        ]
+        _, p1 = run_cmd(common_args)
+        _, p2 = run_cmd(common_args)
+        _, p3 = run_cmd(common_args)
         self.assertTrue(p1.get("ok"))
         self.assertTrue(p2.get("ok"))
         self.assertTrue(p3.get("idempotent_hit"))
@@ -171,7 +234,6 @@ class TestNovelFlowExecutor(unittest.TestCase):
             "--query",
             "主角推进剧情",
             "--no-auto-draft",
-            "--no-auto-improve",
             "--no-auto-retry",
             "--min-paragraphs",
             "12",
@@ -213,7 +275,6 @@ class TestNovelFlowExecutor(unittest.TestCase):
             "--query",
             "主角继续调查并与同伴沟通",
             "--no-auto-draft",
-            "--no-auto-improve",
             "--auto-retry",
             "--min-chars",
             "100",  # 降低阈值，已有内容足够
@@ -226,11 +287,12 @@ class TestNovelFlowExecutor(unittest.TestCase):
             "--no-rollback-on-failure",  # 避免 rollback 覆盖质量修复
             "--force-run",
         ])
-        # 验证：质量修复被触发且内容未被回滚
+        # 验证：不再产生任何"补字"动作，正文内容不被伪造
         actions = payload.get("auto_retry_actions", [])
-        # 如果质量已达标，可能不需要修复
-        if actions:
-            self.assertTrue(any("质量最小修复" in x for x in actions) or any("重建门禁" in x for x in actions))
+        self.assertFalse(
+            any("质量最小修复" in x for x in actions),
+            f"不应再出现造字修复动作，实际 actions={actions}",
+        )
         # 验证：rollback 没有发生（内容被保留）
         self.assertFalse(payload.get("rollback_applied", False))
 

@@ -1,7 +1,6 @@
 # 多步流水线写作协议（Beat Sheet Pipeline）
 
-> 状态：规划中（Phase 2 实现）
-
+> 状态：已实现
 ## 问题背景
 
 单步生成整章内容时，AI 会为了上下文连贯性而压缩剧情，导致章节空洞、推进过快。将"写一章"拆解为多步协作，强制限制单次生成的剧情跨度，让每个场景充分展开。
@@ -57,7 +56,7 @@ Beat 类型分布规则：
 
 ### Step 4: 进入门禁
 
-合成稿进入标准5步门禁流程。
+合成稿进入标准六步门禁流程。
 
 ### Step 5: 图谱回写
 
@@ -74,18 +73,25 @@ Beat 类型分布规则：
 剧情检索 → 锚点配额检查 → Beat Sheet → Beat 扩写 → 合成 → 门禁 → 图谱回写 → 索引更新
 ```
 
-## 脚本入口（规划）
-
+## 脚本入口
 ```bash
-# 生成 Beat Sheet
-python3 scripts/beat_sheet_generator.py \
-  --project-root <目录> --chapter-goal "<本章目标>" --beat-count 4
+# 1) 生成 Beat Sheet（分镜头）
+python3 scripts/beat_sheet_generator.py generate \
+  --project-root <目录> --chapter <章节号> \
+  --chapter-goal "<本章目标>" --beat-count 4 --pacing-depth standard
 
-# Beat 扩写
-python3 scripts/beat_flesh_writer.py \
-  --project-root <目录> --beat-file <beat_sheet.json> --beat-id 1
+# 2) 按 Beat 扩写血肉（生成该 Beat 的扩写提示词）
+python3 scripts/beat_sheet_generator.py expand \
+  --project-root <目录> --chapter <章节号> --beat-id 1
 
-# 章节合成
-python3 scripts/chapter_synthesizer.py \
-  --project-root <目录> --beats-dir <beats目录> --output <章节文件>
+# 3) 校验 Beat Sheet 完整性
+python3 scripts/beat_sheet_generator.py validate --project-root <目录> --chapter <章节号>
+
+# 4) 章节合成
+python3 scripts/chapter_synthesizer.py synthesize --project-root <目录> --chapter <章节号>
+
+# 5) 合成稿质量校验
+python3 scripts/chapter_synthesizer.py validate --project-root <目录> --chapter <章节号>
 ```
+
+> 注意：没有独立的 `beat_flesh_writer.py`，Beat 扩写由 `beat_sheet_generator.py expand` 承担。

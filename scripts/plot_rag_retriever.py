@@ -14,7 +14,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from common import ensure_dir, read_text, slugify, chapter_no_from_name, normalize_text
+from common import (
+    ensure_dir, read_text, slugify, chapter_no_from_name, normalize_text,
+    is_draft_stub_text, STUB_MARKERS,
+)
 from config import get_retrieval_config
 from performance import Tokenizer
 
@@ -240,6 +243,20 @@ def build_chapter_meta(
     return meta
 
 
+_SKELETON_MARKERS = ("## 本章目标", "## 场景草图", "[待填充]", "[待写]")
+
+
+def _is_skeleton_passage(text: str) -> bool:
+    """判断片段是否只是骨架结构（标题/列表项），没有任何正文句子。"""
+    t = text.strip()
+    if not t:
+        return True
+    if any(m in t for m in _SKELETON_MARKERS):
+        return True
+    lines = [ln for ln in t.split("\n") if ln.strip()]
+    return bool(lines) and all(ln.lstrip().startswith(("#", "-", "*", ">", "[")) for ln in lines)
+
+
 def score_passage(passage: str, query_tokens: List[str], query_entities: List[str]) -> Tuple[float, Dict[str, int]]:
     p_tokens = set(tokenize(passage))
     token_overlap = len(set(query_tokens) & p_tokens)
@@ -364,9 +381,14 @@ def build_index(project_root: Path, keyword_top_n: int = 20, incremental: bool =
     docs = []
     reused_docs = 0
     rebuilt_docs = 0
+    skipped_stub_files: List[str] = []
 
     for path in chapters:
         mtime = path.stat().st_mtime
+        # 占位桩章节不进索引：空骨架不配进参考剧情
+        if is_draft_stub_text(read_text(path)):
+            skipped_stub_files.append(path.name)
+            continue
         cached = existing_docs.get(path.name)
         if reuse_allowed and cached and float(cached.get("mtime", -1)) == mtime:
             doc = cached
@@ -435,6 +457,8 @@ def build_index(project_root: Path, keyword_top_n: int = 20, incremental: bool =
         "chapter_count": len(docs),
         "reused_docs": reused_docs,
         "rebuilt_docs": rebuilt_docs,
+        "skipped_stub_docs": len(skipped_stub_files),
+        "skipped_stub_files": skipped_stub_files,
         "cleaned_meta_files": cleaned_meta_files,
         "character_sig": character_sig,
         "docs": docs,
@@ -524,6 +548,11 @@ def retrieve(
     passage_max_chars: int,
 ) -> Dict[str, object]:
     docs = index.get("docs", [])
+    # 兜底：旧索引里可能残留占位桩章节，检索时再滤一次
+    docs = [
+        d for d in docs
+        if not any(m in str(d.get("summary", "")) for m in STUB_MARKERS)
+    ]
     query_tokens = tokenize(query)
     query_token_set = set(query_tokens)
     names = load_character_names(project_root)
@@ -563,6 +592,14 @@ def retrieve(
             per_chapter=per_chapter,
             passage_max_chars=passage_max_chars,
         )
+        # 片段级兜底：任何含占位桩标记或纯骨架标题的片段都不进参考上下文
+        passages = [
+            p for p in passages
+            if not any(m in str(p.get("text", "")) for m in STUB_MARKERS)
+            and not _is_skeleton_passage(str(p.get("text", "")))
+        ]
+        if not passages:
+            continue
         total_chars += sum(len(str(p.get("text", ""))) for p in passages)
         retrieved.append({
             "score": round(s, 3),
@@ -717,6 +754,8 @@ def main() -> int:
             "chapter_count": index.get("chapter_count", 0),
             "reused_docs": index.get("reused_docs", 0),
             "rebuilt_docs": index.get("rebuilt_docs", 0),
+            "skipped_stub_docs": index.get("skipped_stub_docs", 0),
+            "skipped_stub_files": index.get("skipped_stub_files", []),
             "index_file": str(project_root / "00_memory" / "retrieval" / "story_index.json"),
         }, ensure_ascii=False, indent=2))
         return 0

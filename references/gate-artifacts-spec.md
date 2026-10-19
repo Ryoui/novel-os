@@ -1,30 +1,62 @@
 # 门禁产物规范
 
-每章都必须在以下目录产生产物：
-- `04_editing/gate_artifacts/<chapter_id>/`
+每章都必须在以下目录产生产物：`04_editing/gate_artifacts/<chapter_id>/`
+（`<chapter_id>` 由章节文件名 slug 化得到，中文字符保留。）
 
-必需文件：
-1. `memory_update.md`
-2. `consistency_report.md`
-3. `style_calibration.md`
-4. `copyedit_report.md`
-5. `publish_ready.md`
-6. `gate_result.json`（由校验脚本自动生成）
+## 必需产物（6 个 + 1 个发布标记 + 1 个脚本输出）
 
-失败修复文件（门禁失败时生成）：
-- `repair_plan.md`（由 `/修复本章` 生成）
+| # | 文件 | 生成者 | 脚本硬性要求 |
+|---|------|--------|-------------|
+| 1 | `memory_update.md` | `/更新记忆` | 存在、非空、mtime ≥ 章节文件 |
+| 2 | `consistency_report.md` | `/检查一致性` | 同上 |
+| 3 | `pacing_review.md` | `/节奏审查` | 同上，且必须含 `节奏审查: 通过` 或 `节奏审查: 失败` |
+| 4 | `style_calibration.md` | `/风格校准` | 存在、非空、mtime ≥ 章节文件 |
+| 5 | `copyedit_report.md` | `/校稿` | 同上 |
+| 6 | `quality_report.md` | `continue-write` 自动写入 | 见下方《质量基线判定》 |
+| 7 | `publish_ready.md` | `/校稿` | 必须命中发布关键词 |
+| 8 | `gate_result.json` | `/门禁检查` 自动生成 | 脚本输出，`passed: true` 才解锁下一章 |
+
+失败修复文件（门禁失败时生成）：`repair_plan.md`（由 `/修复本章` 生成）。
+
+> ⚠️ **最容易踩的两个坑**
+> 1. `quality_report.md` 由 `continue-write` 自动写入。**手动走六步流程时必须自行生成**，否则门禁必然失败。
+> 2. 所有产物的 mtime 必须不早于章节文件 mtime。改完正文必须重跑全部产物，否则报"文件时间早于章节文件，疑似未执行最新流程"。
 
 ## 生成与校验顺序
-1. `/更新记忆` 生成 `memory_update.md`
-2. `/检查一致性` 生成 `consistency_report.md`
-3. `/风格校准` 生成 `style_calibration.md`
-4. `/校稿` 生成 `copyedit_report.md` 与 `publish_ready.md`
-5. `/门禁检查` 执行脚本写入 `gate_result.json`
-6. 失败时执行 `/修复本章` 生成 `repair_plan.md`
 
-## 通过标准
-- 所有必需文件存在且非空。
-- 文件修改时间不早于章节文件。
-- `publish_ready.md` 必须包含发布关键词（默认：可发布/通过/PASS）。
-- 章节文件必须为 `03_manuscript/*.md`。
-- `02_knowledge_base/` 不得混入章节文件（例如 `第xx章*.md`）。
+1. `/更新记忆` → `memory_update.md`
+2. `/检查一致性` → `consistency_report.md`
+3. `/节奏审查` → `pacing_review.md`
+4. `/风格校准` → `style_calibration.md`
+5. `/校稿` → `copyedit_report.md` + `publish_ready.md`
+6. `/门禁检查` → 执行脚本，写入 `gate_result.json`
+7. 失败时 `/修复本章` → `repair_plan.md`
+
+## 通过标准（`passed = 所有 failures 为空`）
+
+| 检查项 | 判定规则 |
+|--------|---------|
+| `chapter_storage_policy` | 章节必须是 `.md`、位于项目目录内、且在 `03_manuscript/` 下 |
+| `knowledge_base_isolation` | `02_knowledge_base/` 下不得出现 `第\d+章*.md` |
+| 6 个必需产物 | 每个 `size >= 20B`（可用 `--min-bytes` 调整）且 `mtime >= 章节文件 mtime` |
+| `publish_ready_keyword` | 命中 `可发布` / `通过` / `PASS` 之一（可用 `--publish-keywords` 调整） |
+| `quality_baseline` | 见下方《质量基线判定》 |
+| `anti_resolution_guard` | 反向刹车校验无 errors（模块不可导入时降级为 warning） |
+| `pacing_tracker` | 节奏档位与 A/B/C 配额无 errors（同上降级） |
+| `pacing_review_semantic` | `pacing_review.md` 结论必须是 `通过`；结论为 `失败` 或缺失结论行即判失败 |
+| `body_metadata_purity` | **正文纯净度（判死项）**：正文不得含元信息残留（方括号块 `[写作约束]`/`[相关历史剧情]`/`[待写]`、（注：…）、TODO、约束 prompt 原文、代码/路径残留、`补充推进：` 这类写作指令）；占位人名（主角/同伴/配角/角色A…）同词 ≥3 次或出现在对话标签位即判死。无关闭开关，只可用 `00_memory/purity_allowlist.json` 白名单豁免（`allow_names` / `allow_patterns`）。章节仍为占位草稿时直接给出「占位草稿」结论 |
+
+### 质量基线判定（`quality_report.md`）
+
+1. 必须含**全角冒号**的 `通过：True` 或 `通过：False`（半角冒号不识别）
+2. 若存在 `段落唯一比例：<数值>` 行，则要求 `>= 0.85`
+3. 若存在 `最大重复段落次数：<整数>` 行，则要求 `<= 2`
+
+### `pacing_review.md` 的两种模式
+
+| 模式 | 触发方式 | 文件缺失时 |
+|------|---------|-----------|
+| 宽松（默认） | 无额外参数 | 脚本自动生成降级版本 + 记 warning，**不阻断** |
+| 严格 | `--require-semantic-pacing` | 直接记 failure，判失败 |
+
+`continue-write --require-semantic-pacing` 会把该开关透传给门禁。**正式写作流程建议开启**，否则 `/节奏审查` 这一步形同虚设。

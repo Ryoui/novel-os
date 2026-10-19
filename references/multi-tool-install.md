@@ -13,31 +13,31 @@
 ```bash
 bash scripts/install-portable-skill.sh --tool codex --force
 ```
-默认安装到：`~/.codex/skills/novel-claude-ai`
+默认安装到：`~/.codex/skills/novel-os`
 
 ## 2. Claude Code
 ```bash
 bash scripts/install-portable-skill.sh --tool claude-code --force
 ```
-默认安装到：`~/.claude/skills/novel-claude-ai`
+默认安装到：`~/.claude/skills/novel-os`
 
 ## 3. OpenCode
 ```bash
 bash scripts/install-portable-skill.sh --tool opencode --force
 ```
-默认安装到：`~/.opencode/skills/novel-claude-ai`
+默认安装到：`~/.opencode/skills/novel-os`
 
 ## 4. Gemini CLI
 ```bash
 bash scripts/install-portable-skill.sh --tool gemini-cli --force
 ```
-默认安装到：`~/.gemini/skills/novel-claude-ai`
+默认安装到：`~/.gemini/skills/novel-os`
 
 ## 5. Antigravity
 ```bash
 bash scripts/install-portable-skill.sh --tool antigravity --force
 ```
-默认安装到：`~/.antigravity/skills/novel-claude-ai`
+默认安装到：`~/.antigravity/skills/novel-os`
 
 ## 自定义目录
 ```bash
@@ -47,8 +47,6 @@ bash scripts/install-portable-skill.sh --tool <tool> --dest <目标目录> --for
 ## 安装后检查
 确认以下文件存在：
 - `SKILL.md`
-- `novel-creator.md`
-- `novel-creator.json`
 - 对应工具入口文件（如 `CLAUDE.md` / `GEMINI.md` / `OPENCODE.md` / `ANTIGRAVITY.md`）
 - `TOOL_COMPAT.json`
 

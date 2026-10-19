@@ -1,6 +1,6 @@
 # 联网调研指南
 
-> 从 SKILL.md v8.0 第9节抽取，详细用法参考本文档。
+> 对应 `SKILL.md` §9「脚本入口」中的 `research_agent.py`，详细用法见本文档。
 
 ## 概述
 
@@ -38,6 +38,8 @@ python3 scripts/research_agent.py store --project-root <目录> --category "<类
 ```
 
 ## 知识库分类路由
+
+> ⚠️ 角色/时间线/伏笔追踪器在 `00_memory/`，不在 `02_knowledge_base/`。下表只覆盖调研资料类内容。
 
 | 类别关键词 | 存储文件 |
 |-----------|---------|

@@ -7,7 +7,7 @@
 
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Optional
+from typing import Dict, List, Set, Optional, Tuple
 
 
 @dataclass
@@ -24,6 +24,33 @@ class QualityConfig:
     # 占位章检测参数
     max_stub_effective_chars: int = 800
     stub_marker: str = "<!-- NOVEL_FLOW_STUB -->"
+    beat_sheet_stub_marker: str = "<!-- BEAT_SHEET_STUB -->"
+
+    # 正文元信息污染标记（命中即判死，无豁免开关，只可用项目白名单）
+    # 清单来源：references/editorial-team-protocol.md 的 P0 检测触发器。
+    # 每项为 (正则, 分类, 修复提示)。
+    body_meta_markers: List[Tuple[str, str, str]] = field(default_factory=lambda: [
+        (r"<!--\s*(?:NOVEL_FLOW_STUB|BEAT_SHEET_STUB)\s*-->", "占位草稿标记",
+         "章节仍是骨架占位，需补全正文"),
+        (r"(?m)^\[[^\]\n]{1,24}\]\s*$", "方括号元信息块",
+         "删除 [写作约束]/[相关历史剧情]/[本章目标]/[待写] 等非小说文本"),
+        (r"（注[：:]|\(注[：:]|【(?:写作说明|待补充|作者按|作者注)】|\bTODO\b|\bFIXME\b"
+         r"|PLACEHOLDER|待填充|扩写指令", "注记标记",
+         "删除写作注记、TODO、待补充等元信息"),
+        (r"本章禁止揭露|本章必须保留|不要在本章解决|本章推进范围"
+         r"|当前是第\s*\d+\s*章（共|进度\s*\d+(?:\.\d+)?%", "约束 prompt 泄漏",
+         "删除写前约束原文，正文只能是小说文本"),
+        (r"\{\s*'(?:ok|command)'\s*:|anchor_file|\.py['\"]"
+         r"|(?:00_memory|02_knowledge_base|03_manuscript|04_editing)[/\\]", "代码/路径残留",
+         "删除脚本输出、JSON 片段与文件路径残留"),
+        (r"补充推进\s*\d*\s*[：:]|叙述补偿[：:]", "写作指令残留",
+         "删除「补写一段…」这类写作指令，正文只能是小说的叙述与对白"),
+    ])
+
+    # 占位人名候选：需配合触发条件（同词≥3次，或出现在对话标签位），不做字面判死
+    placeholder_names: List[str] = field(default_factory=lambda: [
+        "主角", "配角", "同伴", "路人甲", "角色A", "角色B", "某某", "待定",
+    ])
     
     # 质量下限检查
     min_chars: int = 1200

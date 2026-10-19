@@ -11,6 +11,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 import re
 from collections import Counter
 from pathlib import Path
@@ -336,6 +337,23 @@ def update_project_files(
     return outputs
 
 
+def default_global_library() -> str:
+    """按候选链解析全局风格库目录，避免绑定某一种工具的安装路径。"""
+    env = os.environ.get("NOVEL_OS_STYLE_LIBRARY", "").strip()
+    if env:
+        return env
+
+    repo_library = Path(__file__).resolve().parent.parent / "assets" / "style_library"
+    candidates = [
+        Path.home() / ".claude" / "skills" / "novel-os" / "assets" / "style_library",
+        repo_library,
+    ]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return str(candidate)
+    return str(candidates[0])
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="提取样章风格并沉淀为跨项目可复用风格档案")
     parser.add_argument("files", nargs="+", help="样章文件路径（支持多个）")
@@ -343,8 +361,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project-root", help="小说项目根目录；提供后会同步写入项目知识库")
     parser.add_argument(
         "--global-library",
-        default=str(Path.home() / ".codex" / "skills" / "novel-claude-ai" / "assets" / "style_library"),
-        help="全局风格库存储目录",
+        default=default_global_library(),
+        help="全局风格库存储目录（默认依次尝试 $NOVEL_OS_STYLE_LIBRARY、~/.claude/skills/novel-os/assets/style_library、仓库 assets/style_library）",
     )
     parser.add_argument("--top-n", type=int, default=12, help="高频短语数量")
     parser.add_argument("--emit-json", help="额外导出 JSON 结果路径")

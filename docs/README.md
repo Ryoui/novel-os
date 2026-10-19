@@ -1,7 +1,7 @@
-# Novel Claude AI - 小说创作大师
+# Novel OS - 中文长篇小说创作技能
 
-> **版本**: v1.0.0
-> **状态**: 生产可用
+> **版本**: v2.0.0
+> **状态**: 主线生产可用；`/一键写书` 与 `/仿写` 为调度骨架（`[部分实现]`）
 > **支持工具**: Claude Code / Codex / OpenCode / Gemini CLI / Antigravity
 
 中文长篇小说全流程创作技能，覆盖从模糊想法到300万字成品的完整链路。
@@ -32,7 +32,7 @@
 
 | 层级 | 机制 | 作用 |
 |------|------|------|
-| 第1层 | 五步质量门禁 | 每章强制闭环：记忆同步→一致性检查→风格校准→校稿→门禁脚本 |
+| 第1层 | 六步质量门禁 | 每章强制闭环：记忆同步→一致性检查→节奏审查→风格校准→校稿→门禁脚本 |
 | 第2层 | RAG剧情检索 | 两级检索（粗筛+精排），写前自动回读相关片段 |
 | 第3层 | 知识图谱 | 节点+边+版本管理，每章自动回写，改纲级联更新 |
 | 第4层 | 大纲锚点 | 全局进度条，章节推进配额约束，越界即失败 |
@@ -64,7 +64,7 @@
 
 | 铁律 | 说明 |
 |------|------|
-| 禁止跳过强制章节闭环 | 每章必须完成五步门禁 |
+| 禁止跳过强制章节闭环 | 每章必须完成六步门禁 |
 | 禁止绕过开书前确认 | 必须引导用户确认五要素 |
 | 禁止混淆正文与元信息 | 正文不得出现 `[说明]`、`TODO` 等标记 |
 | 禁止门禁失败后继续写作 | 唯一合法操作是执行 `/修复本章` |
@@ -123,7 +123,7 @@ Beat Sheet生成 → Beat扩写（填血肉）→ 章节合成 → 门禁流程
 
 ### 解决架构
 
-#### 第一层：五步质量门禁（每章强制）
+#### 第一层：六步质量门禁（每章强制）
 
 ```
 /更新记忆 → /检查一致性 → /风格校准 → /校稿 → /门禁检查
@@ -393,15 +393,13 @@ bash scripts/install-portable-skill.sh --tool claude-code --force
 
 1. 复制以下目录到目标工具的skill目录：
    - `SKILL.md`
-   - `novel-creator.md`
-   - `novel-creator.json`
    - `templates/`
    - `references/`
    - `scripts/`
 
 2. Claude Code 额外需要复制 `.claude/agents/` 中的Agent定义文件。
 
-3. 安装目录命名建议：`novel-claude-ai`
+3. 安装目录命名建议：`novel-os`
 
 ---
 
@@ -424,19 +422,24 @@ bash scripts/install-portable-skill.sh --tool claude-code --force
 
 ### `/继续写`
 
-执行完整的写作-校验流程。
+两段式写作：**CLI 备料 → Agent 写正文 → CLI 校验**。
 
 ```
 /继续写 "本章要写的剧情方向"
 ```
 
-**执行内容**（全自动串联）：
+**为什么要分两段**：脚本是独立子进程，拿不到你在 Claude Code / Codex 等工具里配置的模型，所以它不写正文，只负责准备与校验。旧版本会退化成"段落池拼接"，产出的不是小说（现在这套兜底已降级为显式 `--draft-provider template` 的调试选项，产物必被门禁判死）。
+
+**第一段（CLI）**：
 1. 续写前引导（询问剧情走向偏好）
-2. RAG检索相关章节上下文
-3. 大纲锚点配额检查
-4. Beat Sheet生成与扩写
-5. 章节合成与门禁校验
-6. 知识图谱回写与索引更新
+2. RAG 检索相关章节上下文
+3. 大纲锚点配额检查 + 反向刹车 / 事件推荐约束
+4. Beat Sheet 分镜 + 逐 Beat 扩写提示
+5. 产出写作包 `00_memory/next_chapter_task.md`，返回 `awaiting_draft: true`
+
+**第二段（Agent 写正文）**：读写作包 → 按分镜把正文写进 `03_manuscript/第N章-*.md`（只写小说正文，不得含元信息、占位人名、写作指令）。
+
+**第三段（CLI 校验）**：重跑 `/继续写` 或 `/门禁检查` → 六步门禁 + 正文纯净度 → 通过后更新知识图谱与索引。
 
 ### `/修复本章`
 
@@ -479,6 +482,7 @@ bash scripts/install-portable-skill.sh --tool claude-code --force
 |------|------|
 | `/更新记忆` | 同步状态追踪器 |
 | `/检查一致性` | 检查剧情/设定/时间线冲突 |
+| `/节奏审查` | 语义级节奏审查，写入 `pacing_review.md` |
 | `/风格校准` | 检测文风偏移 |
 | `/校稿` | 去AI味润色 |
 | `/门禁检查` | 脚本化校验发布标准 |
@@ -518,36 +522,43 @@ bash scripts/install-portable-skill.sh --tool claude-code --force
 
 ```
 <project-root>/
-├── 00_memory/                    # 记忆系统
+├── 00_memory/                    # 记忆系统（状态追踪器全部在此）
 │   ├── novel_plan.md             # 主线计划（写前必读）
 │   ├── novel_state.md            # 当前状态（写前必读）
 │   ├── idea_seed.md              # 开书确认卡
+│   ├── novel_findings.md         # 设定发现记录
+│   ├── world_state.md            # 世界状态
+│   ├── character_tracker.md      # 角色追踪器
+│   ├── timeline.md               # 时间线
+│   ├── foreshadowing_tracker.md  # 伏笔追踪器
+│   ├── style_anchor.md           # 风格锚点
 │   ├── story_graph.json          # 知识图谱
 │   ├── outline_anchors.json      # 大纲锚点
 │   ├── event_matrix_state.json   # 事件冷却状态
+│   ├── pacing_state.json         # 节奏档位记录
+│   ├── chapter_summaries/recent.md
 │   └── retrieval/                # 检索索引
 │       ├── story_index.json      # 章节检索索引
 │       ├── entity_chapter_map.json
-│       └── next_plot_context.md
-├── 02_knowledge_base/            # 知识库（设定+资料）
-│   ├── 10_worldbuilding.md       # 世界观设定
-│   ├── 11_research_data.md       # 调研资料
-│   ├── 12_style_skills.md        # 写作手法
-│   ├── 13_reference_materials.md # 参考资料
-│   ├── character_tracker.md      # 角色追踪器
-│   ├── timeline.md               # 时间线
-│   └── foreshadowing_tracker.md  # 伏笔追踪器
+│       ├── next_plot_context.md
+│       └── chapter_meta/*.meta.json   # 章节元数据侧车文件
+├── 02_knowledge_base/            # 知识库（设定+资料，不存正文、不存追踪器）
+│   └── 12_style_skills.md        # 写作手法
 ├── 03_manuscript/                # 章节正文
 │   └── 第NNN章_标题.md
 ├── 04_editing/                   # 编辑与门禁
-│   └── gate_artifacts/<chapter_id>/
-│       ├── memory_update.md
-│       ├── consistency_report.md
-│       ├── style_calibration.md
-│       ├── copyedit_report.md
-│       ├── publish_ready.md
-│       ├── gate_result.json
-│       └── repair_plan.md
+│   ├── gate_artifacts/<chapter_id>/
+│   │   ├── memory_update.md
+│   │   ├── consistency_report.md
+│   │   ├── style_calibration.md
+│   │   ├── copyedit_report.md
+│   │   ├── publish_ready.md
+│   │   ├── quality_report.md      # 段落去重指标（门禁硬性要求）
+│   │   ├── pacing_review.md       # 节奏审查报告
+│   │   ├── pipeline_todo.md
+│   │   ├── gate_result.json       # passed=true 才解锁下一章
+│   │   └── repair_plan.md         # 失败时生成
+│   └── cross_reviews/             # 跨Agent审核记录
 └── .flow/                        # 执行状态（内部）
     ├── auto_write_state.json     # 一键写书状态
     ├── continue_write_cache.json # 幂等缓存
@@ -656,6 +667,9 @@ A: 内置调研维度的题材：历史、玄幻、科幻、都市、仙侠、�
 | `references/humanizer-guide.md` | 去AI味润色指南 |
 | `references/research-guide.md` | 联网调研指南 |
 | `references/auto-write-guide.md` | 一键写书指南 |
+| `references/interactive-brainstorming-playbook.md` | 交互式脑洞引导流程 |
+| `references/adaptation-workflow.md` | 仿写与魔改工作流 |
+| `references/multi-tool-install.md` | 多工具安装说明 |
 
 ---
 
@@ -670,13 +684,18 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_novel_flow_executor.py
 ### 脚本入口速查
 
 ```bash
-# 一键开书
+# 一键开书（开书五要素参数建议一并传入）
 python3 scripts/novel_flow_executor.py one-click \
-  --project-root ./我的小说 --title "书名" --genre 历史 --idea "剧情种子"
+  --project-root ./我的小说 --title "书名" --genre 历史 --idea "剧情种子" \
+  --target-audience 起点男频25-35 --writing-style 历史正文 --core-taboo "不写现实政治映射"
 
 # 继续写作
 python3 scripts/novel_flow_executor.py continue-write \
   --project-root ./我的小说 --query "新剧情"
+
+# 改纲续写（锚点重算 + 图谱级联 + RAG 重建）
+python3 scripts/novel_flow_executor.py revise-outline \
+  --project-root ./我的小说 --from-chapter 42 --change-description "主线改为双雄对峙"
 
 # 门禁检查
 python3 scripts/chapter_gate_check.py \
