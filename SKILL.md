@@ -259,6 +259,7 @@ python3 scripts/novel_flow_executor.py one-click \
 | `/剧情检索` | RAG 检索相关片段 | `plot_rag_retriever.py query` |
 | `/检索记忆` · `/伏笔状态` · `/角色状态` · `/时间线` | 查询 `00_memory/` 下追踪器 | 主 Agent 直读 |
 | `/联网调研` | 联网搜索补充知识库 | `research_agent.py` |
+| `/体检` | 作品侧体检：单章指标 / 跨章趋势 / 与本书基线偏离 | `chapter_health.py` |
 | `/题材选风格` · `/风格迁移` · `/风格库检索` | 风格选择与迁移 | 主 Agent + `style_fingerprint.py` |
 | `/风格提取` | 从样章提取风格入库 | `style_fingerprint.py <样章...> --profile-name <名>` |
 | `/拆书` · `/仿写` | 拆解结构 / 提写法模板 | 主 Agent 执行（`adaptation-workflow.md`） |
@@ -319,7 +320,7 @@ python3 scripts/novel_flow_executor.py revise-outline \
 | `research_agent.py keywords/gaps/plan/store` | `/联网调研` |
 | `auto_novel_writer.py plan/run/progress/report` | `/一键写书` |
 | `benchmark_novel_flow.py` | 流程基线评测（含作品侧体检摘要） |
-| `chapter_health.py check/trend` | 单章体检 / 跨章趋势（本地可算，不依赖模型） |
+| `chapter_health.py check/trend/baseline` | 单章体检 / 跨章趋势 / 本书基线偏离（本地可算，不依赖模型） |
 
 **内部库（无 CLI，勿直接调用）**：`common.py`、`config.py`、`performance.py`、`content_expansion_engine.py`、`dynamic_draft_generator.py`、`long_term_context_manager.py`。
 

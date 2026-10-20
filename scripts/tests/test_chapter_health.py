@@ -26,6 +26,10 @@ HEALTH = SCRIPT_DIR / "chapter_health.py"
 BENCH = SCRIPT_DIR / "benchmark_novel_flow.py"
 
 
+DIALOGUE = ("周遇在旁边低声说：“第{i}回了，脚印还没干。今晚来过的不止一个人，"
+            "左边那串是新的，右边那串踩在泥里，脚跟压得比前掌重。”")
+
+
 def build_chapter(no: int, paragraphs: int, *, dialogue_every: int = 3,
                   ai_words: bool = False, skip_sentences: int = 0) -> str:
     chunks = [f"# 第{no}章 码头{no}"]
@@ -37,7 +41,7 @@ def build_chapter(no: int, paragraphs: int, *, dialogue_every: int = 3,
         if ai_words and i % 3 == 0:
             text += "他不禁感到一阵心悸，嘴角微扬。"
         if dialogue_every and i % dialogue_every == 0:
-            text += f"周遇在旁边低声说：“第{i}回了，脚印还没干。”"
+            text += DIALOGUE.format(i=i)
         chunks.append(text)
     return "\n\n".join(chunks) + "\n"
 
@@ -141,6 +145,101 @@ class TestChapterHealth(unittest.TestCase):
         payload = run(HEALTH, "trend", "--project-root", str(self.project_root))
         self.assertFalse(payload["ok"])
         self.assertIn("没有可体检的章节", payload["error"])
+
+
+class TestBaselineDeviation(unittest.TestCase):
+    """基线 = 开局章节中位数；偏离检测能在绝对阈值合格时报警。"""
+
+    def setUp(self):
+        self.project_root = Path(tempfile.mkdtemp(prefix="novel_baseline_"))
+        self.manuscript = self.project_root / "03_manuscript"
+        self.manuscript.mkdir(parents=True, exist_ok=True)
+        (self.project_root / "00_memory").mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.project_root, ignore_errors=True)
+
+    def _write(self, no: int, body: str) -> None:
+        (self.manuscript / f"第{no}章-码头{no}.md").write_text(body, encoding="utf-8")
+
+    def _write_drifting_project(self):
+        for no in (1, 2, 3, 4):
+            self._write(no, build_chapter(no, 40, dialogue_every=2))
+        self._write(5, build_chapter(5, 40, dialogue_every=16))
+
+    def test_baseline_built_from_early_chapters(self):
+        self._write_drifting_project()
+        payload = run(HEALTH, "baseline", "--project-root", str(self.project_root),
+                      "--to-chapter", "4")
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["source_chapters"], [1, 2, 3, 4])
+        self.assertFalse(payload["reused"])
+        self.assertGreater(payload["metrics"]["dialogue_ratio"], 0.15)
+        self.assertTrue(Path(payload["baseline_file"]).exists())
+
+    def test_baseline_reused_unless_rebuild(self):
+        self._write_drifting_project()
+        run(HEALTH, "baseline", "--project-root", str(self.project_root), "--to-chapter", "4")
+        again = run(HEALTH, "baseline", "--project-root", str(self.project_root),
+                    "--to-chapter", "4")
+        self.assertTrue(again["reused"])
+        rebuilt = run(HEALTH, "baseline", "--project-root", str(self.project_root),
+                      "--to-chapter", "4", "--rebuild")
+        self.assertFalse(rebuilt["reused"])
+
+    def test_deviation_flags_drift_when_absolute_checks_pass(self):
+        self._write_drifting_project()
+        run(HEALTH, "baseline", "--project-root", str(self.project_root), "--to-chapter", "4")
+
+        payload = run(HEALTH, "check", "--project-root", str(self.project_root),
+                      "--chapter", "5")
+        # 对话占比在绝对阈值上是 ok，但相对本书基线偏离过大
+        self.assertEqual(payload["statuses"]["dialogue_ratio"], "ok")
+        deviation = payload["deviation"]
+        self.assertTrue(deviation["available"])
+        self.assertEqual(deviation["verdict"], "diverge")
+        item = deviation["metrics"]["dialogue_ratio"]
+        self.assertEqual(item["status"], "diverge")
+        self.assertLess(item["delta_pct"], -0.6)
+
+    def test_check_aligned_on_baseline_chapter(self):
+        self._write_drifting_project()
+        run(HEALTH, "baseline", "--project-root", str(self.project_root), "--to-chapter", "4")
+        payload = run(HEALTH, "check", "--project-root", str(self.project_root),
+                      "--chapter", "4")
+        self.assertEqual(payload["deviation"]["verdict"], "aligned")
+        self.assertEqual(payload["deviation"]["diverge_metrics"], [])
+
+    def test_trend_reports_baseline_alerts_and_section(self):
+        self._write_drifting_project()
+        run(HEALTH, "baseline", "--project-root", str(self.project_root), "--to-chapter", "4")
+        payload = run(HEALTH, "trend", "--project-root", str(self.project_root))
+        self.assertTrue(payload["baseline"]["available"])
+        self.assertEqual(payload["baseline"]["source_chapters"], [1, 2, 3, 4])
+        self.assertGreaterEqual(payload["deviation_counts"]["diverge"], 1)
+        self.assertTrue(any("偏离本书基线" in a for a in payload["alerts"]), payload["alerts"])
+        report = Path(payload["report_file"]).read_text(encoding="utf-8")
+        self.assertIn("与本书基线偏离", report)
+        self.assertIn("diverge", report)
+
+    def test_declared_style_compared_with_anchor(self):
+        self._write(1, build_chapter(1, 40, dialogue_every=2))
+        (self.project_root / "00_memory" / "style_anchor.md").write_text(
+            "# 风格锚点\n\n- **平均句长**：24字\n- **对话占比**：45%\n", encoding="utf-8"
+        )
+        payload = run(HEALTH, "check", "--project-root", str(self.project_root),
+                      "--chapter", "1")
+        declared = payload["declared_style"]
+        self.assertTrue(declared["available"], declared)
+        self.assertEqual(declared["gaps"]["dialogue_ratio"]["declared"], 0.45)
+        self.assertIn("avg_sentence_length", declared["gaps"])
+
+    def test_check_without_baseline_says_how_to_build(self):
+        self._write(1, build_chapter(1, 40))
+        payload = run(HEALTH, "check", "--project-root", str(self.project_root),
+                      "--chapter", "1")
+        self.assertFalse(payload["deviation"]["available"])
+        self.assertIn("baseline", payload["deviation"]["reason"])
 
 
 class TestBenchmarkComposition(unittest.TestCase):

@@ -21,7 +21,11 @@
 - 输入：项目目录；可选章节号或 `--last N`。
 - 执行：
   ```bash
+  # 1) 先建立"本书自身基线"（开局章节的中位数，默认最早 10 章）
+  python3 scripts/chapter_health.py baseline --project-root <项目目录> --to-chapter 10
+  # 2) 单章体检（基线存在时附带偏离度）
   python3 scripts/chapter_health.py check --project-root <项目目录> --chapter 12
+  # 3) 跨章趋势（含偏离序列与告警）
   python3 scripts/chapter_health.py trend --project-root <项目目录> --last 10
   ```
 - 输出：单章 `00_memory/retrieval/chapter_health.json`（原始指标 + 每项 ok/warn/fail + 结论 healthy/attention/risky）；
@@ -29,6 +33,11 @@
 - 指标：字数 / 段落 / 句子 / 对话占比 / 段落唯一度 / 概括跳过密度 / AI 高频词密度 / 节拍信号 / 章末悬念。
 - 定位：**代理指标**。它回答"是否越写越像 AI、越写越赶"，不替代追读率与真实读者反馈；阈值见 `scripts/chapter_health.py` 的 `THRESHOLDS`。
 - 样本门槛：趋势方向需要 **≥3 章**（`MIN_TREND_SAMPLES`）。不足 3 章时所有方向返回 `insufficient_data`（中文报告显示「数据不足」），也不会出漂移类告警——2 个点的差异分不清趋势与噪声。
+- **与本书基线的偏离（档 2）**：`baseline` 用开局章节的中位数当基线（代表"这本书本来长什么样"），逐指标算 `delta_pct` 并给 `ok / notice / diverge`。价值在`绝对值都合格但文风已偏`：例 对话占比 4.5% 仍在绝对阈值内，但相对本书基线 30% 已偏离 −85% → 报 `diverge`。
+  - 容差见 `BASELINE_TOLERANCE`：字数 ±30%、对话占比 ±40%、段落唯一度 ±10%；跳过密度/ AI 密度/ 节拍数用绝对容差（基线接近 0 时相对比例无意义）。
+  - 另有 `declared_style`：把 `style_anchor.md` 里声明的平均句长/对话占比与实际比，回答"有没有按开书时的风格设定写"。
+  - 基线文件：`00_memory/retrieval/chapter_health_baseline.json`；重算加 `--rebuild`。
+  - 时机：写完前 3-10 章后建一次基线，之后每 10 章考虑 `--rebuild`（与 `style_anchor.md` 的校准节奏对齐）。只用 1 章当基线没有统计意义——会把正常波动报成偏离。
 
 `/修复本章`（仅在门禁失败时）
 
