@@ -565,9 +565,13 @@ def latest_chapter(manuscript_dir: Path) -> Optional[Path]:
 
 
 def next_chapter_filename(manuscript_dir: Path, title: str = "待写") -> str:
+    """下一章的落点：最后一章若仍是占位桩，就复用它，不再新建空桩。"""
     cur = latest_chapter(manuscript_dir)
-    next_no = chapter_no_from_name(cur.name) + 1 if cur else 1
-    return f"第{next_no}章-{title}.md"
+    if cur is None:
+        return f"第1章-{title}.md"
+    if is_draft_stub_text(read_text(cur)):
+        return cur.name
+    return f"第{chapter_no_from_name(cur.name) + 1}章-{title}.md"
 
 
 def write_if_needed(path: Path, content: str, overwrite: bool, changed: List[str], skipped: List[str]) -> None:
@@ -2730,8 +2734,11 @@ def parse_args() -> argparse.Namespace:
                         action="store_false",
                         help="禁用写前知识缺口调研")
     p_cont.add_argument("--require-semantic-pacing", dest="require_semantic_pacing",
-                        action="store_true", default=False,
-                        help="门禁强制要求 /节奏审查 产出的 pacing_review.md；缺失则判失败而非自动降级")
+                        action="store_true", default=True,
+                        help="门禁强制要求 /节奏审查 产出的 pacing_review.md（默认开启）")
+    p_cont.add_argument("--no-require-semantic-pacing", dest="require_semantic_pacing",
+                        action="store_false",
+                        help="允许门禁在 pacing_review.md 缺失时自动生成降级版本并放行（仅调试/批处理用）")
     p_cont.add_argument("--use-beat-sheet", dest="use_beat_sheet",
                         action="store_true", default=True,
                         help="使用 Beat Sheet 流水线写作（默认开启）")

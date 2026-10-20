@@ -35,6 +35,15 @@ def _clean_chapter_body() -> str:
     ) + "\n"
 
 
+def _write_pacing_review(project_root: Path, chapter: Path) -> None:
+    """补一份语义版节奏审查（门禁默认强制要求它）。"""
+    gate_dir = project_root / "04_editing" / "gate_artifacts" / chapter.stem
+    gate_dir.mkdir(parents=True, exist_ok=True)
+    (gate_dir / "pacing_review.md").write_text(
+        "# 节奏审查报告\n\n## 综合结论\n节奏审查: 通过\n失败原因: 无\n", encoding="utf-8"
+    )
+
+
 class TestNovelFlowExecutor(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="novel_flow_exec_test_"))
@@ -185,6 +194,7 @@ class TestNovelFlowExecutor(unittest.TestCase):
         ])
         chapter = self.tmpdir / "03_manuscript" / "第2章-短章.md"
         chapter.write_text(_clean_chapter_body(), encoding="utf-8")
+        _write_pacing_review(self.tmpdir, chapter)
         common_args = [
             "continue-write",
             "--project-root",
@@ -208,6 +218,60 @@ class TestNovelFlowExecutor(unittest.TestCase):
         self.assertTrue(p1.get("ok"))
         self.assertTrue(p2.get("ok"))
         self.assertTrue(p3.get("idempotent_hit"))
+
+    def test_continue_write_reuses_last_stub_chapter(self):
+        """最后一章仍是占位桩时复用它，不再每次新建空桩。"""
+        run_cmd([
+            "one-click",
+            "--project-root",
+            str(self.tmpdir),
+            "--title",
+            "雾港回声",
+            "--genre",
+            "悬疑",
+            "--idea",
+            "陈砚在旧港区发现失踪名单",
+        ])
+        _, p1 = run_cmd(["continue-write", "--project-root", str(self.tmpdir),
+                         "--query", "陈砚查看码头"])
+        _, p2 = run_cmd(["continue-write", "--project-root", str(self.tmpdir),
+                         "--query", "陈砚查看后巷"])
+
+        self.assertEqual(p1.get("chapter_file"), p2.get("chapter_file"),
+                         "第二次备料应复用同一个占位章")
+        self.assertIn("第1章", Path(p1["chapter_file"]).name,
+                      "开书生成的第 1 章占位稿应被复用，而不是被跳过")
+        stubs = sorted(p.name for p in (self.tmpdir / "03_manuscript").glob("*.md"))
+        self.assertEqual(len(stubs), 1, f"不应堆积空桩：{stubs}")
+
+    def test_semantic_pacing_required_by_default(self):
+        """门禁默认要求语义版节奏审查，缺失即失败；补齐后通过。"""
+        run_cmd([
+            "one-click",
+            "--project-root",
+            str(self.tmpdir),
+            "--title",
+            "雾港回声",
+            "--genre",
+            "悬疑",
+            "--idea",
+            "陈砚在旧港区发现失踪名单",
+        ])
+        chapter = self.tmpdir / "03_manuscript" / "第2章-短章.md"
+        chapter.write_text(_clean_chapter_body(), encoding="utf-8")
+        args = ["continue-write", "--project-root", str(self.tmpdir),
+                "--chapter-file", str(chapter), "--query", "陈砚继续追查名单",
+                "--no-auto-draft", "--no-auto-retry"]
+
+        _, missing = run_cmd(args)
+        self.assertFalse(missing.get("gate_passed_final"))
+        failures = (missing.get("gate_result") or {}).get("failures") or []
+        self.assertTrue(any(str(f).startswith("pacing_review_semantic") for f in failures), failures)
+
+        _write_pacing_review(self.tmpdir, chapter)
+        _, ok = run_cmd([*args, "--force-run"])
+        self.assertTrue(ok.get("gate_passed_final"),
+                        (ok.get("gate_result") or {}).get("failures"))
 
     def test_continue_write_rollback_on_failure(self):
         run_cmd([

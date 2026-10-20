@@ -36,17 +36,18 @@
 
 `/继续写`
 - 输入：本章目标、冲突、角色（均可选）。
-- 输出：自动完成"检索→写作→门禁→索引更新"。
-- 自动流程：`/剧情检索`（条件触发）→ `/写作` → `/更新记忆` → `/检查一致性` → `/节奏审查` → `/风格校准` → `/校稿` → `/门禁检查` → `/更新剧情索引`。
+- 输出：自动完成"检索→备料→门禁→索引更新"。
+- 自动流程：`/剧情检索`（条件触发）→ 写作包 → 由 Agent 写正文 → `/更新记忆` → `/检查一致性` → `/节奏审查` → `/风格校准` → `/校稿` → `/门禁检查` → `/更新剧情索引`。
 - 执行：`python3 scripts/novel_flow_executor.py continue-write --project-root <项目目录> --query "<新剧情>"`
-- 推荐执行（正式流程开启语义节奏审查强制校验）：
+- 推荐执行（带高级参数）：
   ```bash
   python3 scripts/novel_flow_executor.py continue-write \
     --project-root <项目目录> --query "<新剧情>" \
-    --candidate-k 12 --max-auto-retry-rounds 2 --require-semantic-pacing
+    --candidate-k 12 --max-auto-retry-rounds 2
   ```
-- 说明：执行锁、幂等缓存、写前快照、失败回滚**默认全部开启**。`--rollback-on-failure` 与 `--idempotent-cache` 默认即为 `True`，显式传入属空操作，只能用对应的 `--no-*` 关闭。
-- 关闭高级特性：`--no-beat-sheet` / `--no-constraints` / `--no-graph-update` / `--no-batch-review` / `--no-research`。
+- 说明：执行锁、幂等缓存、写前快照、失败回滚、**语义节奏审查强制校验**默认全部开启。`--rollback-on-failure`、`--idempotent-cache`、`--require-semantic-pacing` 默认即为 `True`，显式传入属空操作，只能用对应的 `--no-*` 关闭。
+- 关闭高级特性：`--no-beat-sheet` / `--no-constraints` / `--no-graph-update` / `--no-batch-review` / `--no-research` / `--no-require-semantic-pacing`。
+- **复用最后一个占位章**：不带 `--chapter-file` 时，若最后一章仍是占位桩（`one-click` 生成的第 1 章就是），就写它，不再新建空桩——避免每跑一次 `/继续写` 都多一个 `第N章-待写.md`。
 - **占位桩不参与检索**：`plot_rag_retriever.py build` 会跳过仍是骨架的章节（含 `<!-- NOVEL_FLOW_STUB -->` / `<!-- BEAT_SHEET_STUB -->` 或短文本独占行 `[待写]`），`build` 输出里的 `skipped_stub_docs` / `skipped_stub_files` 可核对。检索阶段还会兜底过滤旧索引里残留的桩文档与纯骨架片段，避免空桩混进参考上下文。
 - **正文由谁写（`--draft-provider`）**：默认 `auto`——项目配了外部 LLM（`.novel_writer_config.yaml` 或 `--llm-provider/--llm-api-key`）才走 `llm`，否则走 `agent`。
   - `agent`（装到 Claude Code / MiMoCode 等工具时的常态）：**CLI 不写正文**。返回 `awaiting_draft: true` 与 `writing_package`（默认 `00_memory/next_chapter_task.md`），正文保持占位草稿。接手的 Agent 必须读写作包 → 写正文 → 重跑 `/继续写` 或 `/门禁检查`。
@@ -124,7 +125,7 @@
 - 输出：四项语义判断（档位、A/B/C 配额、章末悬念、隐性加速）。
 - 产物：`04_editing/gate_artifacts/<chapter_id>/pacing_review.md`，**必须含 `节奏审查: 通过`**
 - 输出模板与判定标准见 `SKILL.md` §4 与 `references/anti-resolution-cooldown-spec.md`。
-- 门禁默认在文件缺失时自动生成降级版本；加 `--require-semantic-pacing` 则缺失即判失败。
+- 门禁默认严格：`pacing_review.md` 缺失即判失败。只有加 `--no-require-semantic-pacing` 才会退回「脚本自造降级版本 + 记警告」。
 
 `/风格校准`
 - 输入：本章正文 + `style_anchor.md`。输出：风格偏移报告 + 修正建议。
@@ -140,7 +141,7 @@
   ```bash
   python3 scripts/chapter_gate_check.py \
     --project-root <项目目录> --chapter-file <章节文件> \
-    [--require-semantic-pacing]
+    [--no-require-semantic-pacing]  # 默认严格，只有调试/批处理才关
   ```
 - 判定：6 个硬性产物齐全且 mtime 不早于章节文件；`publish_ready.md` 命中发布关键字；`quality_report.md` 结论为全角冒号的 `通过：True`；`pacing_review.md` 结论为 `通过`；反向刹车与节奏追踪器无 errors。
 - 产物：`04_editing/gate_artifacts/<chapter_id>/gate_result.json`

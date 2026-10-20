@@ -56,7 +56,7 @@
 
 | 模式 | 触发方式 | 文件缺失时 |
 |------|---------|-----------|
-| 宽松（默认） | 无额外参数 | 脚本自动生成降级版本 + 记 warning，**不阻断** |
-| 严格 | `--require-semantic-pacing` | 直接记 failure，判失败 |
+| 严格（默认） | 无额外参数（`--require-semantic-pacing` 默认开启） | 直接记 failure，判失败 |
+| 宽松 | `--no-require-semantic-pacing` | 脚本自动生成降级版本 + 记 warning，**不阻断** |
 
-`continue-write --require-semantic-pacing` 会把该开关透传给门禁。**正式写作流程建议开启**，否则 `/节奏审查` 这一步形同虚设。
+`continue-write` 默认即严格：语义节奏审查是六步门禁里唯一无法脚本替代的一步。只有调试或批处理场景才显式用 `--no-require-semantic-pacing` 退回宽松模式——降级版本自身就是脚本生成的，无法独立失败。

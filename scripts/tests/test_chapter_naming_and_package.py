@@ -31,6 +31,15 @@ CHAPTER_BODY = "# 第2章 后巷的脚印\n\n" + "\n\n".join(
 ) + "\n"
 
 
+def _write_pacing_review(project_root: Path, chapter: Path) -> None:
+    """补一份语义版节奏审查（门禁默认强制要求它）。"""
+    gate_dir = project_root / "04_editing" / "gate_artifacts" / chapter.stem
+    gate_dir.mkdir(parents=True, exist_ok=True)
+    (gate_dir / "pacing_review.md").write_text(
+        "# 节奏审查报告\n\n## 综合结论\n节奏审查: 通过\n失败原因: 无\n", encoding="utf-8"
+    )
+
+
 def run(*args):
     p = subprocess.run([sys.executable, str(EXECUTOR), *args],
                        capture_output=True, text=True, encoding="utf-8")
@@ -132,17 +141,20 @@ class TestCacheKeyRespectsStrictFlags(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.project_root, ignore_errors=True)
 
-    def test_require_semantic_pacing_not_served_from_cache(self):
+    def test_strict_flag_changes_cache_key(self):
+        """门禁严格模式开关必须进缓存键：切换后不得命中旧缓存。"""
+        _write_pacing_review(self.project_root, self.chapter)
         base = ["continue-write", "--project-root", str(self.project_root),
                 "--chapter-file", str(self.chapter), "--query", "陈砚继续追查名单"]
         first = run(*base)
         second = run(*base)
-        third = run(*base, "--require-semantic-pacing")
+        relaxed = run(*base, "--no-require-semantic-pacing")
 
+        self.assertTrue(first.get("ok"), (first.get("gate_result") or {}).get("failures"))
         self.assertTrue(second.get("idempotent_hit"), "同参数第二次应命中缓存")
-        self.assertFalse(third.get("idempotent_hit"),
-                         "加 --require-semantic-pacing 后不得复用非严格模式缓存")
-        self.assertNotEqual(first.get("request_id"), third.get("request_id"))
+        self.assertFalse(relaxed.get("idempotent_hit"),
+                         "放松门禁后不得复用严格模式的缓存")
+        self.assertNotEqual(first.get("request_id"), relaxed.get("request_id"))
 
 
 if __name__ == "__main__":
