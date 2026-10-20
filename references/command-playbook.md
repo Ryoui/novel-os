@@ -28,6 +28,7 @@
   跨章 `chapter_health_trend.json` 与 `chapter_health_report.md`（指标序列、方向、告警、逐章结论）。
 - 指标：字数 / 段落 / 句子 / 对话占比 / 段落唯一度 / 概括跳过密度 / AI 高频词密度 / 节拍信号 / 章末悬念。
 - 定位：**代理指标**。它回答"是否越写越像 AI、越写越赶"，不替代追读率与真实读者反馈；阈值见 `scripts/chapter_health.py` 的 `THRESHOLDS`。
+- 样本门槛：趋势方向需要 **≥3 章**（`MIN_TREND_SAMPLES`）。不足 3 章时所有方向返回 `insufficient_data`（中文报告显示「数据不足」），也不会出漂移类告警——2 个点的差异分不清趋势与噪声。
 
 `/修复本章`（仅在门禁失败时）
 

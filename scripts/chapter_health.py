@@ -208,6 +208,9 @@ def _chapters_of(project_root: Path) -> List[Path]:
     return sorted(chapters, key=lambda p: (chapter_no_from_name(p.name), p.name))
 
 
+# 趋势判定需要的最小样本：少于 3 章时任何差异都可能是噪声，直接报"数据不足"
+MIN_TREND_SAMPLES = 3
+
 DIRECTION_ZH = {
     "rising": "上升",
     "falling": "下降",
@@ -221,9 +224,13 @@ def _zh(direction: str) -> str:
 
 
 def _direction(series: List[float], tolerance: float = 0.10) -> str:
-    """首尾对比判断趋势方向（对单点噪声不敏感）。"""
+    """首尾对比判断趋势方向。
+
+    样本不足 MIN_TREND_SAMPLES 章时返回 insufficient_data：2 个点的差异
+    无法区分"趋势"与"噪声"，报方向会制造假告警。
+    """
     values = [v for v in series if v is not None]
-    if len(values) < 2:
+    if len(values) < MIN_TREND_SAMPLES:
         return "insufficient_data"
     head = sum(values[: max(1, len(values) // 2)]) / max(1, len(values) // 2)
     tail = sum(values[len(values) // 2:]) / max(1, len(values) - len(values) // 2)

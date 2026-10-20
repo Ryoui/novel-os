@@ -120,6 +120,22 @@ class TestChapterHealth(unittest.TestCase):
         self.assertIn("作品体检报告", report)
         self.assertIn("代理指标", report)
 
+    def test_trend_needs_min_samples(self):
+        """2 章不足以谈趋势：方向一律 insufficient_data，且不出漂移类告警。"""
+        self._write(1, build_chapter(1, 34))
+        self._write(2, build_chapter(2, 18, dialogue_every=10, ai_words=True))
+        payload = run(HEALTH, "trend", "--project-root", str(self.project_root))
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["chapter_count"], 2)
+        self.assertEqual(
+            set(payload["directions"].values()), {"insufficient_data"},
+            payload["directions"],
+        )
+        self.assertFalse(
+            any("上升" in a or "下降" in a for a in payload["alerts"]),
+            payload["alerts"],
+        )
+
     def test_stub_chapters_ignored(self):
         self._write(1, "# 第1章 待写\n\n<!-- NOVEL_FLOW_STUB -->\n\n## 正文\n[待写]\n")
         payload = run(HEALTH, "trend", "--project-root", str(self.project_root))
