@@ -5,7 +5,7 @@
 .DESCRIPTION
   与 install-portable-skill.sh 行为一致：把 SKILL.md、templates/、references/、
   scripts/（以及存在时的 assets/）复制到目标技能目录，写入入口文件与 TOOL_COMPAT.json。
-  claude-code 额外把 .claude/agents/*.md 安装到 ~/.claude/agents/。
+  claude-code 额外把 agents/*.md（编辑团队角色定义）安装到 ~/.claude/agents/。
 
 .EXAMPLE
   .\install-portable-skill.ps1 -Tool claude-code
@@ -161,8 +161,12 @@ function Write-Manifest {
 function Install-ClaudeAgents {
     param([string]$SourceRoot, [bool]$Overwrite)
 
-    $agentsSrc = Join-Path $SourceRoot ".claude\agents"
-    if (-not (Test-Path $agentsSrc)) { return }
+    # agents/ 是中性目录；.claude/agents 仅为旧布局兜底
+    $agentsSrc = Join-Path $SourceRoot "agents"
+    if (-not (Test-Path $agentsSrc)) {
+        $legacySrc = Join-Path $SourceRoot ".claude\agents"
+        if (Test-Path $legacySrc) { $agentsSrc = $legacySrc } else { return }
+    }
 
     $agentsDest = Join-Path $HOME ".claude\agents"
     if (-not (Test-Path $agentsDest)) { New-Item -ItemType Directory -Path $agentsDest -Force | Out-Null }

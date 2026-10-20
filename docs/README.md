@@ -343,13 +343,13 @@ AI喜欢把事物凑成三个一组制造"全面感"。
 
 ```bash
 # 检测章节的AI痕迹
-python3 scripts/text_humanizer.py detect --chapter-file 03_manuscript/第15章.md
+python3 novel-os/scripts/text_humanizer.py detect --chapter-file 03_manuscript/第15章.md
 
 # 获取可读报告
-python3 scripts/text_humanizer.py report --chapter-file 03_manuscript/第15章.md
+python3 novel-os/scripts/text_humanizer.py report --chapter-file 03_manuscript/第15章.md
 
 # 生成两遍式润色prompt
-python3 scripts/text_humanizer.py prompt --chapter-file 03_manuscript/第15章.md
+python3 novel-os/scripts/text_humanizer.py prompt --chapter-file 03_manuscript/第15章.md
 ```
 
 ---
@@ -360,7 +360,7 @@ python3 scripts/text_humanizer.py prompt --chapter-file 03_manuscript/第15章.m
 
 ```bash
 # 步骤1：安装技能
-bash scripts/install-portable-skill.sh --tool claude-code --force
+bash novel-os/scripts/install-portable-skill.sh --tool claude-code --force
 
 # 步骤2：一键开书（开书五要素缺一不可，缺了会被直接拒绝）
 /一键开书 书名="穿越大唐之我是皇帝" 题材=历史 剧情种子="现代大学生穿越到唐朝成为太子" \
@@ -387,11 +387,11 @@ macOS / Linux 用 `.sh`，Windows 用 `.ps1`（两个脚本行为一致，退出
 
 | 工具 | macOS / Linux | Windows (PowerShell) |
 |------|---------------|----------------------|
-| Claude Code | `bash scripts/install-portable-skill.sh --tool claude-code --force` | `powershell -ExecutionPolicy Bypass -File scripts\install-portable-skill.ps1 -Tool claude-code -Force` |
-| OpenCode | `bash scripts/install-portable-skill.sh --tool opencode --force` | `powershell -ExecutionPolicy Bypass -File scripts\install-portable-skill.ps1 -Tool opencode -Force` |
-| Codex | `bash scripts/install-portable-skill.sh --tool codex --force` | `powershell -ExecutionPolicy Bypass -File scripts\install-portable-skill.ps1 -Tool codex -Force` |
-| Gemini CLI | `bash scripts/install-portable-skill.sh --tool gemini-cli --force` | `powershell -ExecutionPolicy Bypass -File scripts\install-portable-skill.ps1 -Tool gemini-cli -Force` |
-| Antigravity | `bash scripts/install-portable-skill.sh --tool antigravity --force` | `powershell -ExecutionPolicy Bypass -File scripts\install-portable-skill.ps1 -Tool antigravity -Force` |
+| Claude Code | `bash novel-os/scripts/install-portable-skill.sh --tool claude-code --force` | `powershell -ExecutionPolicy Bypass -File novel-os\scripts\install-portable-skill.ps1 -Tool claude-code -Force` |
+| OpenCode | `bash novel-os/scripts/install-portable-skill.sh --tool opencode --force` | `powershell -ExecutionPolicy Bypass -File novel-os\scripts\install-portable-skill.ps1 -Tool opencode -Force` |
+| Codex | `bash novel-os/scripts/install-portable-skill.sh --tool codex --force` | `powershell -ExecutionPolicy Bypass -File novel-os\scripts\install-portable-skill.ps1 -Tool codex -Force` |
+| Gemini CLI | `bash novel-os/scripts/install-portable-skill.sh --tool gemini-cli --force` | `powershell -ExecutionPolicy Bypass -File novel-os\scripts\install-portable-skill.ps1 -Tool gemini-cli -Force` |
+| Antigravity | `bash novel-os/scripts/install-portable-skill.sh --tool antigravity --force` | `powershell -ExecutionPolicy Bypass -File novel-os\scripts\install-portable-skill.ps1 -Tool antigravity -Force` |
 
 ### 安装验证
 
@@ -400,12 +400,12 @@ macOS / Linux 用 `.sh`，Windows 用 `.ps1`（两个脚本行为一致，退出
 ### 手动安装
 
 1. 复制以下目录到目标工具的skill目录：
-   - `SKILL.md`
-   - `templates/`
-   - `references/`
-   - `scripts/`
+   - `novel-os/SKILL.md`
+   - `novel-os/templates/`
+   - `novel-os/references/`
+   - `novel-os/scripts/`
 
-2. Claude Code 额外需要复制 `.claude/agents/` 中的Agent定义文件。
+2. Claude Code 额外需要复制 `novel-os/agents/` 中的Agent定义文件。
 
 3. 安装目录命名建议：`novel-os`
 
@@ -689,48 +689,48 @@ A: 内置调研维度的题材：历史、玄幻、科幻、都市、仙侠、�
 ### 运行回归测试
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_novel_flow_executor.py
+PYTHONDONTWRITEBYTECODE=1 python3 novel-os/scripts/test_novel_flow_executor.py
 ```
 
 ### 脚本入口速查
 
 ```bash
 # 一键开书（五要素必填，缺一即拒绝）
-python3 scripts/novel_flow_executor.py one-click \
+python3 novel-os/scripts/novel_flow_executor.py one-click \
   --project-root ./我的小说 --title "书名" --genre 历史 --idea "剧情种子" \
   --target-audience "起点男频 25-35" --writing-style 历史正文 \
   --core-taboo "不写现实政治映射" --automation-level 半自动 --target-words 1000000
 
 # 继续写作
-python3 scripts/novel_flow_executor.py continue-write \
+python3 novel-os/scripts/novel_flow_executor.py continue-write \
   --project-root ./我的小说 --query "新剧情"
 
 # 改纲续写（锚点重算 + 图谱级联 + RAG 重建）
-python3 scripts/novel_flow_executor.py revise-outline \
+python3 novel-os/scripts/novel_flow_executor.py revise-outline \
   --project-root ./我的小说 --from-chapter 42 --change-description "主线改为双雄对峙"
 
 # 门禁检查
-python3 scripts/chapter_gate_check.py \
+python3 novel-os/scripts/chapter_gate_check.py \
   --project-root ./我的小说 --chapter-file ./我的小说/03_manuscript/第15章.md
 
 # RAG检索
-python3 scripts/plot_rag_retriever.py build --project-root ./我的小说
-python3 scripts/plot_rag_retriever.py query --project-root ./我的小说 --query "剧情关键词"
+python3 novel-os/scripts/plot_rag_retriever.py build --project-root ./我的小说
+python3 novel-os/scripts/plot_rag_retriever.py query --project-root ./我的小说 --query "剧情关键词"
 
 # 联网调研
-python3 scripts/research_agent.py plan --genre 历史 --topic "唐朝安史之乱"
+python3 novel-os/scripts/research_agent.py plan --genre 历史 --topic "唐朝安史之乱"
 
 # 一键写书
-python3 scripts/auto_novel_writer.py plan --synopsis "简介" --target-chars 2000000
-python3 scripts/auto_novel_writer.py run --project-root ./我的小说
+python3 novel-os/scripts/auto_novel_writer.py plan --synopsis "简介" --target-chars 2000000
+python3 novel-os/scripts/auto_novel_writer.py run --project-root ./我的小说
 
 # 基线评测
-python3 scripts/benchmark_novel_flow.py --project-root ./我的小说 --rounds 5
+python3 novel-os/scripts/benchmark_novel_flow.py --project-root ./我的小说 --rounds 5
 
 # 作品侧体检（基线 → 单章 → 跨章趋势）
-python3 scripts/chapter_health.py baseline --project-root ./我的小说 --to-chapter 10
-python3 scripts/chapter_health.py check --project-root ./我的小说 --chapter 12
-python3 scripts/chapter_health.py trend --project-root ./我的小说 --last 10
+python3 novel-os/scripts/chapter_health.py baseline --project-root ./我的小说 --to-chapter 10
+python3 novel-os/scripts/chapter_health.py check --project-root ./我的小说 --chapter 12
+python3 novel-os/scripts/chapter_health.py trend --project-root ./我的小说 --last 10
 ```
 
 ---

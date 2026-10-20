@@ -15,7 +15,7 @@
 | Windows（PowerShell 5.1+ / PowerShell 7） | `scripts/install-portable-skill.ps1` | `-Tool codex -Dest <目录> -Force` |
 
 两者行为一致：复制 `SKILL.md`、`templates/`、`references/`、`scripts/`（存在则连同 `assets/`），
-写入对应工具入口文件与 `TOOL_COMPAT.json`；`claude-code` 额外把 `.claude/agents/*.md` 安装到 `~/.claude/agents/`。
+写入对应工具入口文件与 `TOOL_COMPAT.json`；`claude-code` 额外把 `agents/*.md`（编辑团队角色定义）安装到 `~/.claude/agents/`。
 
 ## 1. Codex
 ```bash

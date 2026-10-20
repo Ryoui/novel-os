@@ -116,11 +116,13 @@ copy_core() {
   [[ -d "$SRC_DIR/assets" ]] && cp -R "$SRC_DIR/assets" "$DEST/" || true
 }
 
-# Claude Code 专属：安装 Agent 定义文件到 ~/.claude/agents/
+# Claude Code 专属：把技能里的角色定义（agents/）安装到 ~/.claude/agents/
+# agents/ 是中性目录：其他工具可当角色提示词用，Claude Code 落成 subagent 定义
 install_claude_agents() {
-  local agents_src="$SRC_DIR/.claude/agents"
+  local agents_src="$SRC_DIR/agents"
   if [[ ! -d "$agents_src" ]]; then
-    return 0
+    local legacy_src="$SRC_DIR/.claude/agents"
+    [[ -d "$legacy_src" ]] && agents_src="$legacy_src" || return 0
   fi
 
   local agents_dest="$HOME/.claude/agents"

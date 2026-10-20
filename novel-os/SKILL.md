@@ -384,7 +384,7 @@ python3 scripts/novel_flow_executor.py continue-write \
   └─► 连载核实官 consistency-reviewer ┘
 ```
 
-四个角色定义在 `.claude/agents/`，由 `install-portable-skill.sh --tool claude-code` 安装到 `~/.claude/agents/`。非 Claude Code 工具请改用 `cross_agent_reviewer.py review|batch-review`。
+四个角色定义在 `agents/`，由 `install-portable-skill.sh --tool claude-code` 安装到 `~/.claude/agents/`。非 Claude Code 工具请改用 `cross_agent_reviewer.py review|batch-review`。
 
 ### 11.3 正文隔离协议（最关键的安全机制）
 

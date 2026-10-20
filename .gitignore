@@ -14,9 +14,9 @@ test_output/
 .flow/
 
 # IDE 和工具配置
-# 注意：只忽略 .claude/ 的内容而非目录本身，否则 git 无法 re-include 子路径
-.claude/*
-!.claude/agents/
+# 编辑团队角色定义已迁到 novel-os/agents/（随技能分发包一起走），
+# 这里只忽略本机开发用的工具目录
+.claude/
 .codex/
 .opencode/
 openspec/

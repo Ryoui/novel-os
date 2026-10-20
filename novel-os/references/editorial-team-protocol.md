@@ -94,7 +94,7 @@
 
 ## 执行方式（Claude Code）
 
-四个角色定义在仓库的 `.claude/agents/`，安装脚本会在 `--tool claude-code` 时复制到 `~/.claude/agents/`。总编辑（主 Agent）按以下顺序调度：
+四个角色定义在技能的 `agents/`，安装脚本会在 `--tool claude-code` 时复制到 `~/.claude/agents/`。总编辑（主 Agent）按以下顺序调度：
 
 ```
 步骤 0  准备上下文快照
