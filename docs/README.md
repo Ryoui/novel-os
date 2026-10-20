@@ -363,6 +363,8 @@ python3 novel-os/scripts/text_humanizer.py prompt --chapter-file 03_manuscript/�
 bash novel-os/scripts/install-portable-skill.sh --tool claude-code --force
 
 # 步骤2：一键开书（开书五要素缺一不可，缺了会被直接拒绝）
+#   不知道问什么？先跑 skill 内的 onboarding 剧本取提问模板：
+#   python3 novel-os/scripts/novel_flow_executor.py onboarding
 /一键开书 书名="穿越大唐之我是皇帝" 题材=历史 剧情种子="现代大学生穿越到唐朝成为太子" \
   目标读者="起点男频 25-35" 写作风格=历史正文 核心禁区="不写现实政治映射" \
   自动化等级=半自动 目标规模=1000000

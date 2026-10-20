@@ -73,6 +73,14 @@ python3 scripts/novel_flow_executor.py one-click \
   --core-taboo "不写真实案件改编" --automation-level 半自动 --target-words 1000000
 ```
 
+### 开场三步（首分钟就这么走）
+
+1. **问**：跑 `novel_flow_executor.py onboarding`，按返回的 `steps` 逐题问用户，每题把 `options` 当推荐项给出。用户说「随便 / 你定」时，从 `presets` 里报一个套餐名让用户点头，不要自己替他填。
+2. **开书**：五要素收齐后按 `slash_command` 的格式执行 `/一键开书`。缺项会被 CLI 拒绝（`error: onboarding_incomplete`），按返回的 `missing` 继续追问即可。
+3. **回执**：开书成功会返回 `receipt`——那是给**用户**看的一页（书名/五要素/规模/还差什么/下一步）。**原样念给他，不要贴文件清单或 JSON**。然后按 `00_memory/project_brief.md` 补齐立项，再出第 1 章写作包。
+
+> `自动化等级` 接受「半自动（每 10 章确认）」这类带说明的写法，CLI 会自动归一化。
+
 落地方式：五要素写入 `00_memory/idea_seed.md` 的「开书五要素（已确认）」卡片；**核心禁区 → `outline_anchors.json` 的 `global_forbidden_reveals`**（门禁据此判定提前揭露）；**目标规模 → 章节总数**。
 
 用户回答"不确定"时：基于题材和读者群体，给出 2-3 个推荐选项供其选择，不要替他默认。

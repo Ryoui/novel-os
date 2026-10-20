@@ -631,6 +631,114 @@ def load_character_names(project_root: Path) -> List[str]:
     return sorted(names)
 
 
+# 首分钟提问剧本：每题给一个可直接照读的问句 + 可选项，避免 Agent 自由发挥
+ONBOARDING_QUESTIONS = [
+    {
+        "key": "target_audience",
+        "label": "目标读者",
+        "param": "--target-audience",
+        "ask": "这本书写给谁看？（平台 + 人群，例如「起点男频 25-35」）",
+        "options": ["起点男频 25-35", "番茄女频 18-28", "晋江女频 18-28", "出版向 25-40"],
+    },
+    {
+        "key": "writing_style",
+        "label": "写作风格",
+        "param": "--writing-style",
+        "ask": "想写成哪种风格？",
+        "options": ["悬疑推理", "网文爽文", "历史正文", "文艺", "言情细腻"],
+    },
+    {
+        "key": "core_taboo",
+        "label": "核心禁区",
+        "param": "--core-taboo",
+        "ask": "有什么绝对不能写的内容？（没有就回答「无」）",
+        "options": ["无", "不写真实案件改编", "不写露骨情色", "不写现实政治映射"],
+    },
+    {
+        "key": "automation_level",
+        "label": "自动化等级",
+        "param": "--automation-level",
+        "ask": "希望我写到什么程度就停下来等你确认？",
+        "options": ["手动（每章确认）", "半自动（每 10 章确认）", "全自动"],
+    },
+    {
+        "key": "target_words",
+        "label": "目标规模",
+        "param": "--target-words",
+        "ask": "准备写多长？（总字数，按 3500 字/章折算章节数）",
+        "options": ["300000（短篇试水）", "1000000（长篇）", "2000000（超长篇）"],
+    },
+]
+
+# 一句话套餐：用户不想逐题回答时，报一个名字即可（仍是显式确认，不是绕过）
+ONBOARDING_PRESETS = [
+    {
+        "name": "悬疑推理·男频",
+        "desc": "起点男频，100 万字，半自动，不写真实案件改编",
+        "values": {
+            "target_audience": "起点男频 25-35", "writing_style": "悬疑推理",
+            "core_taboo": "不写真实案件改编", "automation_level": "半自动",
+            "target_words": "1000000",
+        },
+    },
+    {
+        "name": "都市爽文·男频",
+        "desc": "番茄男频，200 万字，全自动，不写露骨情色",
+        "values": {
+            "target_audience": "番茄男频 18-30", "writing_style": "网文爽文",
+            "core_taboo": "不写露骨情色", "automation_level": "全自动",
+            "target_words": "2000000",
+        },
+    },
+    {
+        "name": "言情细腻·女频",
+        "desc": "晋江女频，80 万字，半自动，不写虐恋致死",
+        "values": {
+            "target_audience": "晋江女频 18-28", "writing_style": "言情细腻",
+            "core_taboo": "不写虐恋致死", "automation_level": "半自动",
+            "target_words": "800000",
+        },
+    },
+]
+
+AUTOMATION_ALIASES = {"手动": "手动", "半自动": "半自动", "全自动": "全自动"}
+
+
+def normalize_automation_level(raw: str) -> str:
+    """把「半自动（每 10 章确认）」这类选项压成合法枚举值。"""
+    text = str(raw or "").strip()
+    for key in AUTOMATION_ALIASES:
+        if text.startswith(key):
+            return key
+    return text
+
+
+def slash_command_template(title: str = "<书名>", genre: str = "<题材>", idea: str = "<剧情种子>") -> str:
+    """给用户看的斜杠命令（不是给终端的 python 命令）。"""
+    return (
+        f"/一键开书 书名={title} 题材={genre} 剧情种子=\"{idea}\" "
+        "目标读者=\"起点男频 25-35\" 写作风格=悬疑推理 "
+        "核心禁区=\"不写真实案件改编\" 自动化等级=半自动 目标规模=1000000"
+    )
+
+
+def cmd_onboarding(args: argparse.Namespace) -> Dict[str, object]:
+    """输出「首分钟提问剧本」：问什么、给什么选项、开书命令长什么样。零写盘。"""
+    return {
+        "ok": True,
+        "command": "onboarding",
+        "steps": ONBOARDING_QUESTIONS,
+        "presets": ONBOARDING_PRESETS,
+        "how_to_use": [
+            "1. 按 steps 顺序逐题问用户，每题把 options 作为推荐项给出",
+            "2. 用户回「随便/你定/不确定」时，从 presets 里挑一个最接近的，报名字让用户确认",
+            "3. 五个答案收齐后，用 slash_command 的格式代用户执行开书",
+            "4. 开书返回 receipt 时，把 receipt 原样念给用户（那是他能看懂的一页）",
+        ],
+        "slash_command": slash_command_template(),
+    }
+
+
 def validate_onboarding(args: argparse.Namespace) -> List[str]:
     """校验开书五要素；返回问题清单（空列表 = 全部就位）。
 
@@ -653,7 +761,8 @@ def validate_onboarding(args: argparse.Namespace) -> List[str]:
     if not taboo:
         issues.append(f"缺核心禁区 {ONBOARDING_FIELDS[2][2]}（确无禁区请显式写「{TABOO_NONE}」）")
 
-    level = str(getattr(args, "automation_level", "") or "").strip()
+    level = normalize_automation_level(getattr(args, "automation_level", ""))
+    setattr(args, "automation_level", level)
     if not level:
         issues.append(f"缺自动化等级 {ONBOARDING_FIELDS[3][2]}（可选：{'/'.join(AUTOMATION_LEVELS)}）")
     elif level not in AUTOMATION_LEVELS:
@@ -669,30 +778,146 @@ def validate_onboarding(args: argparse.Namespace) -> List[str]:
 
 
 def onboarding_example(args: argparse.Namespace) -> str:
-    return (
-        "python3 scripts/novel_flow_executor.py one-click "
-        f"--project-root <项目目录> --title <书名> --genre <题材> --idea <剧情种子> "
-        f"--target-audience \"起点男频 25-35\" --writing-style 悬疑推理 "
-        f"--core-taboo \"不写真实案件改编\" --automation-level 半自动 --target-words 1000000"
-    )
+    title = str(getattr(args, "title", "") or "<书名>")
+    genre = str(getattr(args, "genre", "") or "<题材>")
+    idea = str(getattr(args, "idea", "") or "<剧情种子>")
+    return slash_command_template(title, genre, idea)
 
 
 def outline_gaps(project_root: Path) -> List[str]:
-    """立项是否还缺内容：novel_plan.md 里的待补标记。"""
+    """立项是否还缺内容：按 novel_plan.md 里的待补标记报出**字段名**。
+
+    给作者看的清单不该是「计划中含未填字段」，而是「核心卖点没填」。
+    """
     plan_path = project_root / "00_memory" / "novel_plan.md"
     if not plan_path.exists():
         return ["novel_plan.md 不存在"]
+
     plan = read_text(plan_path)
     gaps: List[str] = []
-    for key, label in (
-        (PLAN_TODO_MARK, "计划中含未填字段"),
-        ("待细化", "计划中含「待细化」"),
-        ("待补充", "计划中含「待补充」"),
-        ("主角(主角)", "主角仍是占位名「主角」"),
-    ):
-        if key in plan:
-            gaps.append(f"{label}（{key}）")
-    return gaps
+
+    for line in plan.splitlines():
+        if PLAN_TODO_MARK not in line:
+            continue
+        label = line.strip().lstrip("-*[ ]").strip()
+        head = re.split(r"[：:]", label, maxsplit=1)[0].strip()
+        head = re.sub(r"\(.*?\)", "", head).strip() or "未命名字段"
+        if "卷" in head:
+            head = f"主线大纲·{head}"
+        elif head.startswith("主角"):
+            head = "主角与人物弧线"
+        gaps.append(f"未填：{head}")
+
+    if "待细化" in plan:
+        gaps.append("仍有「待细化」占位")
+    if "待补充" in plan:
+        gaps.append("仍有「待补充」占位")
+    if "主角(主角)" in plan:
+        gaps.append("主角仍是占位名「主角」")
+
+    # 去重并保持出现顺序
+    seen = set()
+    ordered = [g for g in gaps if not (g in seen or seen.add(g))]
+    return ordered
+
+
+def build_receipt(args: argparse.Namespace, project_root: Path, gaps: List[str]) -> str:
+    """开书成功后给作者看的一段人话回执（不是文件清单）。"""
+    target_words = int(getattr(args, "target_words", 0) or 0)
+    chapters = max(10, target_words // 3500)
+    lines = [
+        f"《{getattr(args, 'title', '')}》已开书 · 题材：{getattr(args, 'genre', '')}"
+        f" · 风格：{getattr(args, 'writing_style', '')}",
+        f"- 目标读者：{getattr(args, 'target_audience', '')}",
+        f"- 核心禁区：{getattr(args, 'core_taboo', '')}（门禁会拦住提前揭露与越界内容）",
+        f"- 自动化等级：{getattr(args, 'automation_level', '')}",
+        f"- 规模：{target_words:,} 字 ≈ {chapters} 章（每章 3500 字）",
+        "- 已就绪：主线计划骨架、人物/时间线/伏笔追踪器、风格锚点、检索索引、大纲锚点",
+    ]
+    if gaps:
+        lines += [
+            "- 还差：核心卖点、主线大纲、人物弧线（这是唯一需要创作的部分）",
+            f"- 我下一步：按 00_memory/project_brief.md 把立项补齐，再出第 1 章的写作包",
+            "- 你不用做别的，回一句「继续」就行",
+        ]
+    else:
+        lines += [
+            "- 立项已完整，可以直接写第 1 章",
+            '- 你只要告诉我「第一章写什么」，比如：/继续写 "陈砚在码头发现名单"',
+        ]
+    return "\n".join(lines)
+
+
+def write_project_brief(
+    project_root: Path, args: argparse.Namespace, gaps: List[str]
+) -> Path:
+    """给作者看的一页：这本书要写成什么样、还差什么、文件都是干什么的。"""
+    target_words = int(getattr(args, "target_words", 0) or 0)
+    chapters = max(10, target_words // 3500)
+    lines = [
+        f"# 《{getattr(args, 'title', '')}》立项摘要",
+        "",
+        "> 这是给你（作者）看的一页。技术细节在其它文件里，这里只讲这本书要写成什么样。",
+        "",
+        "## 一、这本书的定位",
+        "",
+        f"- 题材：{getattr(args, 'genre', '')}",
+        f"- 一句话卖点：{getattr(args, 'core_hook', '') or PLAN_TODO_MARK}",
+        f"- 核心冲突：{getattr(args, 'core_conflict', '') or PLAN_TODO_MARK}",
+        f"- 主角：{getattr(args, 'protagonist', '') or PLAN_TODO_MARK}"
+        f"（目标：{getattr(args, 'protagonist_goal', '') or PLAN_TODO_MARK}）",
+        "",
+        "## 二、开书五要素（已确认）",
+        "",
+        f"- 目标读者：{getattr(args, 'target_audience', '')}",
+        f"- 写作风格：{getattr(args, 'writing_style', '')}",
+        f"- 核心禁区：{getattr(args, 'core_taboo', '')}",
+        f"- 自动化等级：{getattr(args, 'automation_level', '')}",
+        f"- 目标规模：{target_words:,} 字 ≈ {chapters} 章 × 3500 字",
+        "",
+        "## 三、还差什么",
+        "",
+    ]
+    if gaps:
+        lines += [f"- {g}" for g in gaps]
+        lines += [
+            "",
+            "补全方式：我来做（按 `00_memory/outline_task.md` 写进 `00_memory/novel_plan.md`），"
+            "你只需要确认方向对不对。",
+        ]
+    else:
+        lines += ["- 立项已完整，可以直接开写。"]
+
+    lines += [
+        "",
+        "## 四、这些文件是干什么的",
+        "",
+        "| 文件 | 作用 | 需要你改吗 |",
+        "|------|------|-----------|",
+        "| `00_memory/novel_plan.md` | 主线计划：卖点、卷章大纲、人物弧线 | 方向要改时改这里 |",
+        "| `00_memory/novel_state.md` | 当前进度与主角处境（每章自动更新） | 不用 |",
+        "| `00_memory/idea_seed.md` | 开书时的想法与五要素 | 不用 |",
+        "| `00_memory/character_tracker.md` | 角色档案与当前状态 | 加角色时补充 |",
+        "| `00_memory/foreshadowing_tracker.md` | 伏笔埋设与回收 | 不用 |",
+        "| `00_memory/style_anchor.md` | 风格锚点（句长、对话占比等） | 想改文风时改 |",
+        "| `03_manuscript/` | 章节正文 | **这是你的成品** |",
+        "| `04_editing/gate_artifacts/` | 每章的质量检查记录 | 不用 |",
+        "",
+        "## 五、下一步",
+        "",
+    ]
+    if gaps:
+        lines.append("1. 我先把立项补全（你确认方向）")
+        lines.append('2. 然后你说一句「第一章写什么」，我出写作包并写正文')
+        lines.append("3. 写完过门禁，通过后进入下一章")
+    else:
+        lines.append('1. 告诉我「第一章写什么」，例如：/继续写 "陈砚在码头发现名单"')
+        lines.append("2. 我出写作包、写正文、过门禁")
+    lines.append("")
+
+    target = project_root / "00_memory" / "project_brief.md"
+    write_text(target, "\n".join(lines))
+    return target
 
 
 def write_outline_task(project_root: Path, gaps: List[str]) -> Path:
@@ -2466,6 +2691,7 @@ def one_click(args: argparse.Namespace) -> Dict[str, object]:
             "project_root": str(project_root),
             "error": "onboarding_incomplete",
             "missing": issues,
+            "how_to_ask": "先按 onboarding 子命令的剧本逐题问用户，收齐后再开书",
             "next_step": "补齐开书五要素后重跑：\n" + onboarding_example(args),
         }
 
@@ -2498,20 +2724,28 @@ def one_click(args: argparse.Namespace) -> Dict[str, object]:
 
     gaps = outline_gaps(project_root)
     outline_task = write_outline_task(project_root, gaps) if gaps else None
+    brief = write_project_brief(project_root, args, gaps)
+    receipt = build_receipt(args, project_root, gaps)
+    if gaps:
+        next_step = (
+            "把 receipt 原样念给用户，然后按 00_memory/outline_task.md 补全 novel_plan.md；"
+            "补完重跑 /继续写 出第 1 章写作包。用户无需做别的。"
+        )
+    else:
+        next_step = '/继续写 "第一章要写什么"（先出写作包，再由你写正文）'
     return {
         "ok": b_code == 0,
         "command": "one-click",
         "project_root": str(project_root),
+        "receipt": receipt,
+        "project_brief": str(brief),
         "created_or_updated_files": files["changed"],
         "skipped_files": files["skipped"],
         "index_result": b_payload if b_payload is not None else {"stdout": b_out, "stderr": b_err},
         "automation_level": str(getattr(args, "automation_level", "")).strip(),
         "outline_gaps": gaps,
         "outline_task": str(outline_task) if outline_task else None,
-        "next_step": (
-            f"立项未完成：{outline_task}。补齐 00_memory/novel_plan.md 后重跑 /继续写。"
-            if gaps else "/继续写"
-        ),
+        "next_step": next_step,
     }
 
 
@@ -2764,8 +2998,13 @@ def cmd_brainstorm(args: argparse.Namespace) -> Dict[str, object]:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="小说流程增强执行器：一键开书 / 继续写")
+    p = argparse.ArgumentParser(
+        description="小说流程增强执行器：一键开书 / 继续写 / 首分钟引导"
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    p_onb = sub.add_parser("onboarding", help="首分钟提问剧本（零写盘）")
+    p_onb.add_argument("--project-root", help="可选：仅用于展示，不写任何文件")
 
     p_one = sub.add_parser("one-click", help="执行 /一键开书")
     p_one.add_argument("--project-root", required=True)
@@ -2906,6 +3145,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     _dispatch = {
+        "onboarding": cmd_onboarding,
         "one-click": one_click,
         "brainstorm": cmd_brainstorm,
         "revise-outline": cmd_revise_outline,
@@ -2916,8 +3156,9 @@ def main() -> int:
         payload: Dict[str, object] = {"ok": False, "error": f"unknown_command:{args.cmd}"}
     else:
         payload = _handler(args)
-    if args.emit_json:
-        jp = Path(args.emit_json).expanduser().resolve()
+    emit_json = getattr(args, "emit_json", None)
+    if emit_json:
+        jp = Path(emit_json).expanduser().resolve()
         ensure_dir(jp.parent)
         jp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False, indent=2))

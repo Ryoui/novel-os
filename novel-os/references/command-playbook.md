@@ -15,7 +15,13 @@
 
 ## 0.1 新手最简命令（推荐）
 
-1. `/一键开书`
+1. `/开书引导`（首分钟提问剧本）
+- 输入：无（可选 `--project-root`，仅用于展示，不写任何文件）。
+- 执行：`python3 scripts/novel_flow_executor.py onboarding`
+- 输出：`steps`（五题：问句 + 选项 + 对应参数）、`presets`（三个一句话套餐）、`slash_command`（开书命令模板）、`how_to_use`（四步用法）。
+- 用法：逐题问用户 → 收齐五要素 → 按 `slash_command` 开书 → 把返回的 `receipt` 原样念给用户。
+
+`/一键开书`
 2. `/继续写`
 3. `/体检`（作品侧体检）
 - 输入：项目目录；可选章节号或 `--last N`。
@@ -57,6 +63,7 @@
   ```
 - **五要素缺一即拒绝开书**：返回 `ok:false` + `error: onboarding_incomplete` + `missing`（逐项说明缺什么、可选值是什么），且不写任何文件。`--writing-style` 只接受 历史正文 / 网文爽文 / 文艺 / 悬疑推理 / 言情细腻；`--automation-level` 只接受 手动 / 半自动 / 全自动；`--core-taboo` 确无禁区也必须写 `无`；`--target-words` ≥ 10000。
 - 落地：五要素写入 `00_memory/idea_seed.md` 的确认卡；核心禁区 → `outline_anchors.json` 的 `global_forbidden_reveals`；目标规模 → 章节总数（按 3500 字/章）。
+- 成功返回 `receipt`（给作者看的一页：定位 / 五要素 / 规模 / 还差什么 / 下一步）与 `project_brief`（`00_memory/project_brief.md`，含文件导航表）；`outline_gaps` 直接列出未填字段名（如「未填：核心卖点（一句话）」）。
 - 计划字段可选传：`--protagonist` / `--protagonist-goal` / `--core-conflict` / `--core-hook`。不传时 `novel_plan.md` 对应位置标 `[待补全]`，于是返回里的 `outline_gaps` 非空、`outline_task` 指向立项补全包，`/继续写` 会被挡住直到补齐。
 
 `/继续写`
