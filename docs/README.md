@@ -726,6 +726,10 @@ python3 scripts/auto_novel_writer.py run --project-root ./我的小说
 
 # 基线评测
 python3 scripts/benchmark_novel_flow.py --project-root ./我的小说 --rounds 5
+
+# 作品侧体检（单章 / 跨章趋势）
+python3 scripts/chapter_health.py check --project-root ./我的小说 --chapter 12
+python3 scripts/chapter_health.py trend --project-root ./我的小说 --last 10
 ```
 
 ---

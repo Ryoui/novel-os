@@ -127,6 +127,26 @@ def main() -> int:
         "avg_retrieval_context_chars": mean([r["retrieval_context_chars"] for r in runs]),
     }
 
+    # 流程指标之外，再给一份"作品侧"体检——流程跑通不等于章节能读
+    composition: Dict[str, object] = {"available": False, "reason": "没有已写章节（占位桩不计）"}
+    try:
+        from chapter_health import build_trend
+
+        trend = build_trend(project_root)
+        if trend["chapter_count"] > 0:
+            composition = {
+                "available": True,
+                "chapter_count": trend["chapter_count"],
+                "verdict_counts": trend["verdict_counts"],
+                "directions": trend["directions"],
+                "alerts": trend["alerts"],
+                "note": "代理指标，不等同读者感受；详见 chapter_health.py trend",
+            }
+    except Exception as exc:  # 体检失败不影响流程指标
+        composition = {"available": False, "error": str(exc)}
+
+    summary["composition"] = composition
+
     out = project_root / "00_memory" / "retrieval" / "eval_baseline.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"summary": summary, "runs": runs}, ensure_ascii=False, indent=2), encoding="utf-8")

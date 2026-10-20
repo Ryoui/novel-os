@@ -85,7 +85,8 @@ scripts/
   auto_novel_writer.py      # 一键写书调度器（断点续写/进度报告）
   chapter_gate_check.py     # 门禁产物完整性校验（--require-semantic-pacing 强制节奏审查）
   gate_repair_plan.py       # 失败修复计划生成
-  benchmark_novel_flow.py   # 基线评测
+  benchmark_novel_flow.py   # 基线评测（流程指标 + 作品侧体检摘要）
+  chapter_health.py         # 单章体检 / 跨章趋势（代理指标，不依赖模型）
   style_fingerprint.py      # 风格指纹提取
   pacing_tracker.py         # 节奏档位与 A/B/C 配额记账
   story_graph_builder.py    # 知识图谱 CRUD / 校验 / Mermaid 导出

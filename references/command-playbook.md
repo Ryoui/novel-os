@@ -17,7 +17,19 @@
 
 1. `/一键开书`
 2. `/继续写`
-3. `/修复本章`（仅在门禁失败时）
+3. `/体检`（作品侧体检）
+- 输入：项目目录；可选章节号或 `--last N`。
+- 执行：
+  ```bash
+  python3 scripts/chapter_health.py check --project-root <项目目录> --chapter 12
+  python3 scripts/chapter_health.py trend --project-root <项目目录> --last 10
+  ```
+- 输出：单章 `00_memory/retrieval/chapter_health.json`（原始指标 + 每项 ok/warn/fail + 结论 healthy/attention/risky）；
+  跨章 `chapter_health_trend.json` 与 `chapter_health_report.md`（指标序列、方向、告警、逐章结论）。
+- 指标：字数 / 段落 / 句子 / 对话占比 / 段落唯一度 / 概括跳过密度 / AI 高频词密度 / 节拍信号 / 章末悬念。
+- 定位：**代理指标**。它回答"是否越写越像 AI、越写越赶"，不替代追读率与真实读者反馈；阈值见 `scripts/chapter_health.py` 的 `THRESHOLDS`。
+
+`/修复本章`（仅在门禁失败时）
 
 `/继续写` 自动执行完整章节流程，无需手动拆分命令。
 

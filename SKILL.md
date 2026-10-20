@@ -318,7 +318,8 @@ python3 scripts/novel_flow_executor.py revise-outline \
 | `novel_chapter_writer.py --provider <provider>` | 多 LLM 章节写作引擎（OpenAI/Claude/Kimi/GLM/MiniMax/本地） |
 | `research_agent.py keywords/gaps/plan/store` | `/联网调研` |
 | `auto_novel_writer.py plan/run/progress/report` | `/一键写书` |
-| `benchmark_novel_flow.py` | 流程基线评测 |
+| `benchmark_novel_flow.py` | 流程基线评测（含作品侧体检摘要） |
+| `chapter_health.py check/trend` | 单章体检 / 跨章趋势（本地可算，不依赖模型） |
 
 **内部库（无 CLI，勿直接调用）**：`common.py`、`config.py`、`performance.py`、`content_expansion_engine.py`、`dynamic_draft_generator.py`、`long_term_context_manager.py`。
 
