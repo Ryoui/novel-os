@@ -362,14 +362,20 @@ python3 scripts/text_humanizer.py prompt --chapter-file 03_manuscript/第15章.m
 # 步骤1：安装技能
 bash scripts/install-portable-skill.sh --tool claude-code --force
 
-# 步骤2：一键开书
-/一键开书 书名="穿越大唐之我是皇帝" 题材=历史 剧情种子="现代大学生穿越到唐朝成为太子，利用现代知识治国平天下"
+# 步骤2：一键开书（开书五要素缺一不可，缺了会被直接拒绝）
+/一键开书 书名="穿越大唐之我是皇帝" 题材=历史 剧情种子="现代大学生穿越到唐朝成为太子" \
+  目标读者="起点男频 25-35" 写作风格=历史正文 核心禁区="不写现实政治映射" \
+  自动化等级=半自动 目标规模=1000000
 
-# 步骤3：继续写
+# 步骤3：继续写（CLI 备料 → Agent 写正文 → 门禁校验）
 /继续写 "太子在朝堂上首次发言，引起百官震动"
 ```
 
-系统会自动完成：世界观建模 → 知识库初始化 → 章节写作 → 门禁校验 → 索引更新。
+系统会自动完成：世界观建模 → 知识库初始化 → 立项检查 → 写作包准备 → 门禁校验 → 索引更新。
+
+> **五要素强制**：`one-click` 缺任何一项都会返回 `ok:false`（`error: onboarding_incomplete`）并逐项说明缺什么，不写任何文件。写作风格只接受 历史正文 / 网文爽文 / 文艺 / 悬疑推理 / 言情细腻；核心禁区确无也要写 `无`。
+>
+> **立项闸口**：五要素齐了但 `novel_plan.md` 仍含 `[待补全]` 时，`/继续写` 返回 `awaiting_outline` 与 `00_memory/outline_task.md`，补完计划才进入写作。
 
 ---
 
@@ -377,13 +383,15 @@ bash scripts/install-portable-skill.sh --tool claude-code --force
 
 ### 支持的AI工具
 
-| 工具 | 安装命令 |
-|------|----------|
-| Claude Code | `bash scripts/install-portable-skill.sh --tool claude-code --force` |
-| OpenCode | `bash scripts/install-portable-skill.sh --tool opencode --force` |
-| Codex | `bash scripts/install-portable-skill.sh --tool codex --force` |
-| Gemini CLI | `bash scripts/install-portable-skill.sh --tool gemini-cli --force` |
-| Antigravity | `bash scripts/install-portable-skill.sh --tool antigravity --force` |
+macOS / Linux 用 `.sh`，Windows 用 `.ps1`（两个脚本行为一致，退出码相同）：
+
+| 工具 | macOS / Linux | Windows (PowerShell) |
+|------|---------------|----------------------|
+| Claude Code | `bash scripts/install-portable-skill.sh --tool claude-code --force` | `powershell -ExecutionPolicy Bypass -File scripts\install-portable-skill.ps1 -Tool claude-code -Force` |
+| OpenCode | `bash scripts/install-portable-skill.sh --tool opencode --force` | `powershell -ExecutionPolicy Bypass -File scripts\install-portable-skill.ps1 -Tool opencode -Force` |
+| Codex | `bash scripts/install-portable-skill.sh --tool codex --force` | `powershell -ExecutionPolicy Bypass -File scripts\install-portable-skill.ps1 -Tool codex -Force` |
+| Gemini CLI | `bash scripts/install-portable-skill.sh --tool gemini-cli --force` | `powershell -ExecutionPolicy Bypass -File scripts\install-portable-skill.ps1 -Tool gemini-cli -Force` |
+| Antigravity | `bash scripts/install-portable-skill.sh --tool antigravity --force` | `powershell -ExecutionPolicy Bypass -File scripts\install-portable-skill.ps1 -Tool antigravity -Force` |
 
 ### 安装验证
 
@@ -410,15 +418,18 @@ bash scripts/install-portable-skill.sh --tool claude-code --force
 初始化一个完整的小说项目。
 
 ```
-/一键开书 书名="书名" 题材=历史 剧情种子="一句话概述核心剧情"
+/一键开书 书名="书名" 题材=历史 剧情种子="一句话概述核心剧情" \
+  目标读者="起点男频 25-35" 写作风格=历史正文 核心禁区="不写现实政治映射" \
+  自动化等级=半自动 目标规模=1000000
 ```
 
 **执行内容**：
-1. 引导确认五要素（目标读者、写作风格、核心禁区、自动化等级、目标规模）
+1. **校验开书五要素**（缺一即拒绝，返回 `onboarding_incomplete` 且不写文件）
 2. 创建项目目录结构
-3. 生成主线计划（novel_plan.md）
+3. 生成主线计划（`novel_plan.md`，未提供的创作字段标 `[待补全]`）
 4. 建立知识库骨架
-5. 构建初始检索索引
+5. 构建初始检索索引与大纲锚点（总章节数由目标规模派生，禁止揭露项取核心禁区）
+6. 计划仍有 `[待补全]` 时输出立项补全包 `00_memory/outline_task.md`
 
 ### `/继续写`
 
@@ -552,7 +563,7 @@ bash scripts/install-portable-skill.sh --tool claude-code --force
 │   │   ├── consistency_report.md
 │   │   ├── style_calibration.md
 │   │   ├── copyedit_report.md
-│   │   ├── publish_ready.md
+│   │   ├── publish_ready.md      # 门禁派生的发布结论（每次重写）
 │   │   ├── quality_report.md      # 段落去重指标（门禁硬性要求）
 │   │   ├── pacing_review.md       # 节奏审查报告
 │   │   ├── pipeline_todo.md
@@ -684,10 +695,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_novel_flow_executor.py
 ### 脚本入口速查
 
 ```bash
-# 一键开书（开书五要素参数建议一并传入）
+# 一键开书（五要素必填，缺一即拒绝）
 python3 scripts/novel_flow_executor.py one-click \
   --project-root ./我的小说 --title "书名" --genre 历史 --idea "剧情种子" \
-  --target-audience 起点男频25-35 --writing-style 历史正文 --core-taboo "不写现实政治映射"
+  --target-audience "起点男频 25-35" --writing-style 历史正文 \
+  --core-taboo "不写现实政治映射" --automation-level 半自动 --target-words 1000000
 
 # 继续写作
 python3 scripts/novel_flow_executor.py continue-write \

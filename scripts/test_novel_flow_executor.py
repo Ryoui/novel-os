@@ -14,7 +14,23 @@ EXECUTOR = ROOT / "novel_flow_executor.py"
 PY = "python3"
 
 
+# 开书五要素（CLI 已强制校验），测试统一注入
+_ONBOARDING_ARGS = [
+    "--target-audience", "起点男频 25-35",
+    "--writing-style", "悬疑推理",
+    "--core-taboo", "不写真实案件改编",
+    "--automation-level", "半自动",
+    "--target-words", "1000000",
+    "--protagonist", "陈砚",
+    "--protagonist-goal", "查清三年前的旧案",
+    "--core-conflict", "失踪名单背后的旧案",
+    "--core-hook", "一张名单牵出三条人命",
+]
+
+
 def run_cmd(args):
+    if args and args[0] == "one-click" and "--target-audience" not in args:
+        args = [*args, *_ONBOARDING_ARGS]
     proc = subprocess.run([PY, str(EXECUTOR), *args], capture_output=True, text=True)
     if proc.returncode not in (0, 1):
         raise AssertionError(f"命令异常: rc={proc.returncode}\nstdout={proc.stdout}\nstderr={proc.stderr}")
@@ -430,8 +446,8 @@ class TestPacingAndGateFixes(unittest.TestCase):
             f"immersive 模式 skip density 应硬失败，实际 failures={failures}",
         )
 
-    def test_publish_ready_reflects_quality_failure(self):
-        """质量未通过时，publish_ready.md 应写入 FAIL 关键词，而非 PASS。"""
+    def test_executor_does_not_write_publish_verdict(self):
+        """发布结论只能由门禁派生，执行器不得自产 publish_ready.md。"""
         import sys
         sys.path.insert(0, str(ROOT))
         import importlib
@@ -450,16 +466,17 @@ class TestPacingAndGateFixes(unittest.TestCase):
             "ai_phrase_hits": [],
             "failures": ["char_count<2500 (current: 100)"],
         }
-        nfe.write_gate_artifacts(self.tmpdir, chapter_path, "测试查询", fake_quality, None)
+        written = nfe.write_gate_artifacts(self.tmpdir, chapter_path, "测试查询", fake_quality, None)
 
         publish_path = (
             self.tmpdir / "04_editing" / "gate_artifacts"
             / nfe.slugify(chapter_path.stem) / "publish_ready.md"
         )
-        self.assertTrue(publish_path.exists(), "publish_ready.md 应被写入")
-        content = publish_path.read_text(encoding="utf-8")
-        self.assertIn("FAIL", content, "质量不达标时 publish_ready.md 应含 FAIL 关键词")
-        self.assertNotIn("PASS", content, "质量不达标时 publish_ready.md 不应含 PASS")
+        self.assertFalse(publish_path.exists(), "publish_ready.md 不应由执行器生成")
+        self.assertFalse(
+            any("publish_ready.md" in str(p) for p in written),
+            f"write_gate_artifacts 不应再产出发布判定：{written}",
+        )
 
     def test_decompose_overrides_disable_memory_update(self):
         """_decompose_beat_scenes 的 config_overrides 必须包含 auto_update_memory=False。"""

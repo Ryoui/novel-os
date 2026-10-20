@@ -59,17 +59,11 @@ def map_failure_to_steps(failure: str) -> List[str]:
             "继续执行 /门禁检查。",
         ]
 
-    if f.startswith("publish_ready"):
+    if f.startswith("publish"):
         return [
-            "重新执行 /校稿，生成 publish_ready.md 且确保为最终发布稿。",
-            "检查 publish_ready.md 包含可发布关键词（可发布/通过/PASS）。",
-            "继续执行 /门禁检查。",
-        ]
-
-    if "publish_ready_keyword" in f:
-        return [
-            "在 publish_ready.md 中补充发布判定关键词（可发布/通过/PASS）。",
-            "重新执行 /门禁检查。",
+            "发布结论由门禁派生，不能手写：先修掉上面列出的其他失败项。",
+            "publish_ready.md 会在每次 /门禁检查 时被重写为脚本判定结果。",
+            "修完后重新执行 /门禁检查。",
         ]
 
     if "body_metadata_purity" in f:

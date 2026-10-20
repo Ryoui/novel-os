@@ -24,15 +24,18 @@
 ## 1. 核心创作命令
 
 `/一键开书`
-- 输入：题材、剧情种子、主角目标、核心冲突、预期篇幅，以及开书五要素（目标读者 / 写作风格 / 核心禁区 / 自动化等级 / 目标规模）。
-- 输出：自动完成开书建模 + 建库 + 首章写作准备。
+- 输入：题材、剧情种子，以及**开书五要素**（目标读者 / 写作风格 / 核心禁区 / 自动化等级 / 目标规模）。
+- 输出：开书建模 + 建库 + 立项检查；五要素齐且计划完整时给出 `/继续写`。
 - 执行：
   ```bash
   python3 scripts/novel_flow_executor.py one-click \
     --project-root <项目目录> --title <书名> --genre <题材> --idea <剧情种子> \
-    --target-audience <目标读者> --writing-style <写作风格> --core-taboo <核心禁区>
+    --target-audience "起点男频 25-35" --writing-style 悬疑推理 \
+    --core-taboo "不写真实案件改编" --automation-level 半自动 --target-words 1000000
   ```
-- 说明：`--title/--genre/--idea` 有默认值但会被写成"未命名小说/待定题材"，**务必显式传入**；`--target-audience/--writing-style/--core-taboo` 默认空串，缺失时 Iron Law 的五要素确认无法落地。
+- **五要素缺一即拒绝开书**：返回 `ok:false` + `error: onboarding_incomplete` + `missing`（逐项说明缺什么、可选值是什么），且不写任何文件。`--writing-style` 只接受 历史正文 / 网文爽文 / 文艺 / 悬疑推理 / 言情细腻；`--automation-level` 只接受 手动 / 半自动 / 全自动；`--core-taboo` 确无禁区也必须写 `无`；`--target-words` ≥ 10000。
+- 落地：五要素写入 `00_memory/idea_seed.md` 的确认卡；核心禁区 → `outline_anchors.json` 的 `global_forbidden_reveals`；目标规模 → 章节总数（按 3500 字/章）。
+- 计划字段可选传：`--protagonist` / `--protagonist-goal` / `--core-conflict` / `--core-hook`。不传时 `novel_plan.md` 对应位置标 `[待补全]`，于是返回里的 `outline_gaps` 非空、`outline_task` 指向立项补全包，`/继续写` 会被挡住直到补齐。
 
 `/继续写`
 - 输入：本章目标、冲突、角色（均可选）。
@@ -143,7 +146,7 @@
     --project-root <项目目录> --chapter-file <章节文件> \
     [--no-require-semantic-pacing]  # 默认严格，只有调试/批处理才关
   ```
-- 判定：6 个硬性产物齐全且 mtime 不早于章节文件；`publish_ready.md` 命中发布关键字；`quality_report.md` 结论为全角冒号的 `通过：True`；`pacing_review.md` 结论为 `通过`；反向刹车与节奏追踪器无 errors。
+- 判定：5 个硬性产物齐全且 mtime 不早于章节文件；发布结论由门禁派生（`publish_ready.md` 每次重写，不接受手写）；`quality_report.md` 结论为全角冒号的 `通过：True`；`pacing_review.md` 结论为 `通过`；反向刹车与节奏追踪器无 errors。
 - 产物：`04_editing/gate_artifacts/<chapter_id>/gate_result.json`
 - 完整判定规则见 `references/gate-artifacts-spec.md`。
 

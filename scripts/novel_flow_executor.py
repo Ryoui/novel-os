@@ -29,6 +29,20 @@ from common import (
 )
 
 
+WRITING_STYLES = ("历史正文", "网文爽文", "文艺", "悬疑推理", "言情细腻")
+AUTOMATION_LEVELS = ("手动", "半自动", "全自动")
+TABOO_NONE = "无"
+PLAN_TODO_MARK = "[待补全]"
+
+# 开书时必须由用户确认的五要素：CLI 参数名 -> 人类可读名
+ONBOARDING_FIELDS = (
+    ("target_audience", "目标读者", "--target-audience"),
+    ("writing_style", "写作风格", "--writing-style"),
+    ("core_taboo", "核心禁区", "--core-taboo"),
+    ("automation_level", "自动化等级", "--automation-level"),
+    ("target_words", "目标规模", "--target-words"),
+)
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_ROOT = SCRIPT_DIR.parent
 TEMPLATE_DIR = SKILL_ROOT / "templates"
@@ -617,6 +631,105 @@ def load_character_names(project_root: Path) -> List[str]:
     return sorted(names)
 
 
+def validate_onboarding(args: argparse.Namespace) -> List[str]:
+    """校验开书五要素；返回问题清单（空列表 = 全部就位）。
+
+    这里不留默认值：缺一项就拒绝开书，而不是生成一份空壳计划。
+    """
+    issues: List[str] = []
+    audience = str(getattr(args, "target_audience", "") or "").strip()
+    if not audience:
+        issues.append(f"缺目标读者 {ONBOARDING_FIELDS[0][2]}（如「起点男频 25-35」）")
+
+    style = str(getattr(args, "writing_style", "") or "").strip()
+    if not style:
+        issues.append(f"缺写作风格 {ONBOARDING_FIELDS[1][2]}（可选：{'/'.join(WRITING_STYLES)}）")
+    elif style not in WRITING_STYLES:
+        issues.append(
+            f"写作风格「{style}」不在支持范围（可选：{'/'.join(WRITING_STYLES)}）"
+        )
+
+    taboo = str(getattr(args, "core_taboo", "") or "").strip()
+    if not taboo:
+        issues.append(f"缺核心禁区 {ONBOARDING_FIELDS[2][2]}（确无禁区请显式写「{TABOO_NONE}」）")
+
+    level = str(getattr(args, "automation_level", "") or "").strip()
+    if not level:
+        issues.append(f"缺自动化等级 {ONBOARDING_FIELDS[3][2]}（可选：{'/'.join(AUTOMATION_LEVELS)}）")
+    elif level not in AUTOMATION_LEVELS:
+        issues.append(f"自动化等级「{level}」不合法（可选：{'/'.join(AUTOMATION_LEVELS)}）")
+
+    words = getattr(args, "target_words", None)
+    if not words:
+        issues.append(f"缺目标规模 {ONBOARDING_FIELDS[4][2]}（总字数，建议 ≥ 10000）")
+    elif int(words) < 10000:
+        issues.append(f"目标规模 {int(words)} 字过小（至少 10000 字）")
+
+    return issues
+
+
+def onboarding_example(args: argparse.Namespace) -> str:
+    return (
+        "python3 scripts/novel_flow_executor.py one-click "
+        f"--project-root <项目目录> --title <书名> --genre <题材> --idea <剧情种子> "
+        f"--target-audience \"起点男频 25-35\" --writing-style 悬疑推理 "
+        f"--core-taboo \"不写真实案件改编\" --automation-level 半自动 --target-words 1000000"
+    )
+
+
+def outline_gaps(project_root: Path) -> List[str]:
+    """立项是否还缺内容：novel_plan.md 里的待补标记。"""
+    plan_path = project_root / "00_memory" / "novel_plan.md"
+    if not plan_path.exists():
+        return ["novel_plan.md 不存在"]
+    plan = read_text(plan_path)
+    gaps: List[str] = []
+    for key, label in (
+        (PLAN_TODO_MARK, "计划中含未填字段"),
+        ("待细化", "计划中含「待细化」"),
+        ("待补充", "计划中含「待补充」"),
+        ("主角(主角)", "主角仍是占位名「主角」"),
+    ):
+        if key in plan:
+            gaps.append(f"{label}（{key}）")
+    return gaps
+
+
+def write_outline_task(project_root: Path, gaps: List[str]) -> Path:
+    """立项补全包：把「还差什么」摊给宿主 Agent 去写。"""
+    seed_path = project_root / "00_memory" / "idea_seed.md"
+    seed = read_text(seed_path) if seed_path.exists() else "（缺 idea_seed.md）"
+    lines = [
+        "# 立项补全任务",
+        "",
+        "开书五要素已确认，但主线计划还不能支撑写作。请补齐下列内容，再执行 `/继续写`。",
+        "",
+        "## 一、待补项",
+    ]
+    lines += [f"- {g}" for g in gaps]
+    lines += [
+        "",
+        "## 二、需要你写进 00_memory/novel_plan.md 的内容",
+        f"- 核心卖点：一句话说清「为什么读者要点开」（替换 {PLAN_TODO_MARK}）",
+        "- 主线大纲：按卷列出事件与章号区间，卷内三幕各有明确目标",
+        "- 核心人物弧线：主角与核心配角的起点 → 转折 → 终点",
+        "- 力量体系阶梯（如有）：每阶的规则与限制",
+        "- 绝对规则：本书不可违反的 2-4 条红线（含用户确认的核心禁区）",
+        "",
+        "## 三、已确认的开书五要素（来自 idea_seed.md）",
+        seed.strip(),
+        "",
+        "## 四、交付要求",
+        f"- 写完后 novel_plan.md 中不得残留 {PLAN_TODO_MARK} / 待细化 / 待补充 / 主角(主角)。",
+        "- 只补规划，不要写正文。",
+        "- 完成后重跑 `/继续写`，CLI 会复检立项完整性再进入写作。",
+        "",
+    ]
+    target = project_root / "00_memory" / "outline_task.md"
+    write_text(target, "\n".join(lines))
+    return target
+
+
 def init_project_files(project_root: Path, args: argparse.Namespace, overwrite: bool) -> Dict[str, List[str]]:
     changed: List[str] = []
     skipped: List[str] = []
@@ -625,11 +738,11 @@ def init_project_files(project_root: Path, args: argparse.Namespace, overwrite: 
     mapping = {
         "TITLE": args.title,
         "GENRE": args.genre,
-        "CORE_HOOK": args.core_hook,
+        "CORE_HOOK": args.core_hook or PLAN_TODO_MARK,
         "TARGET_WORDS": str(args.target_words),
         "ENDING": args.ending,
         "VOL1_NAME": "起势卷",
-        "VOL1_EVENT": args.core_conflict,
+        "VOL1_EVENT": args.core_conflict or PLAN_TODO_MARK,
         "VOL1_END": "120",
         "ACT1_GOAL": "建立主角目标与初始矛盾",
         "ACT2_CONFLICT": "冲突升级并引入多线压力",
@@ -638,7 +751,7 @@ def init_project_files(project_root: Path, args: argparse.Namespace, overwrite: 
         "VOL2_EVENT": "主线升级",
         "VOL2_START": "121",
         "VOL2_END": "240",
-        "PROTAGONIST": args.protagonist,
+        "PROTAGONIST": args.protagonist or PLAN_TODO_MARK,
         "START_STATE": "普通起点",
         "MID_TRANSFORM": "价值观重塑",
         "FINAL_STATE": "完成角色弧线",
@@ -654,15 +767,15 @@ def init_project_files(project_root: Path, args: argparse.Namespace, overwrite: 
         "RULE_2": "时间线不得自相矛盾",
         "RULE_3": "力量体系不得跳级失控",
         "DATE": now,
-        "MAIN_PLOT": args.core_conflict,
+        "MAIN_PLOT": args.core_conflict or PLAN_TODO_MARK,
         "START_LOCATION": "起始地点",
-        "START_GOAL": args.protagonist_goal,
+        "START_GOAL": args.protagonist_goal or PLAN_TODO_MARK,
         "CHAPTER1_PLAN": "建立主角目标与核心冲突，留下章末钩子",
-        "CHAPTER1_CHARACTERS": args.protagonist,
-        "PROTAGONIST_NAME": args.protagonist,
+        "CHAPTER1_CHARACTERS": args.protagonist or PLAN_TODO_MARK,
+        "PROTAGONIST_NAME": args.protagonist or PLAN_TODO_MARK,
         "POWER_LEVEL": "初阶",
         "LOCATION": "起始地点",
-        "GOAL": args.protagonist_goal,
+        "GOAL": args.protagonist_goal or PLAN_TODO_MARK,
         "ITEMS": "暂无",
         "PERSONALITY": "待细化",
         "APPEARANCE": "待细化",
@@ -690,9 +803,30 @@ def init_project_files(project_root: Path, args: argparse.Namespace, overwrite: 
         "RHYTHM_PATTERN": "升-升-爆-缓",
     }
 
+    target_words = int(getattr(args, "target_words", 0) or 0)
+    total_chapters = max(10, target_words // 3500)
+    confirmation_lines = [
+        "- 目标读者：" + str(getattr(args, "target_audience", "")).strip(),
+        "- 写作风格：" + str(getattr(args, "writing_style", "")).strip(),
+        "- 核心禁区：" + str(getattr(args, "core_taboo", "")).strip(),
+        "- 自动化等级：" + str(getattr(args, "automation_level", "")).strip(),
+        f"- 目标规模：{target_words} 字（约 {total_chapters} 章 × 3500 字）",
+    ]
+    idea_seed_md = (
+        "# 剧情种子（模糊输入转结构化）\n\n"
+        f"## 一句话脑洞\n{args.idea or PLAN_TODO_MARK}\n\n"
+        f"## 题材与目标读者\n- 题材：{args.genre}\n"
+        f"- 目标读者：{str(getattr(args, 'target_audience', '')).strip()}\n\n"
+        f"## 主角（起点状态）\n- 姓名：{args.protagonist or PLAN_TODO_MARK}\n"
+        f"- 目标：{args.protagonist_goal or PLAN_TODO_MARK}\n\n"
+        f"## 核心冲突\n{args.core_conflict or PLAN_TODO_MARK}\n\n"
+        f"## 预期结局\n{args.ending}\n\n"
+        f"## 禁区（不想写的内容）\n{str(getattr(args, 'core_taboo', '')).strip()}\n\n"
+        "## 开书五要素（已确认）\n" + "\n".join(confirmation_lines) + "\n"
+    )
+
     file_map = {
-        "00_memory/idea_seed.md": template("idea_seed.template.md", mapping)
-        + f"\n\n## 用户输入补充\n- 剧情种子：{args.idea}\n- 主角目标：{args.protagonist_goal}\n- 核心冲突：{args.core_conflict}\n",
+        "00_memory/idea_seed.md": idea_seed_md,
         "00_memory/million_word_blueprint.md": template("million_word_blueprint.template.md", mapping),
         "00_memory/novel_plan.md": template("novel_plan.template.md", mapping),
         "00_memory/novel_state.md": template("novel_state.template.md", mapping),
@@ -1595,34 +1729,13 @@ def write_gate_artifacts(
 - 发布建议：参考下方检测报告后执行两遍式润色
 {humanizer_section}
 """
-    # evaluate_quality() 返回 "passed" 键；兼容上游可能传入 "ok" 键的场景
-    quality_ok: bool = bool(quality.get("passed", quality.get("ok", False)))
-    quality_failures: List[str] = list(quality.get("failures", []))  # type: ignore[arg-type]
-    if quality_ok:
-        publish_verdict = "可发布（通过）"
-        publish_keyword = "可发布 / 通过 / PASS"
-        publish_note = "本章已完成自动流程并通过所有质量门禁项。"
-    else:
-        publish_verdict = "不建议发布（未通过）"
-        publish_keyword = "不通过 / FAIL"
-        failure_lines = "\n".join(f"  - {f}" for f in quality_failures) if quality_failures else "  - 未知失败"
-        publish_note = f"本章未通过以下质量门禁项，需修复后重新检查：\n{failure_lines}"
-
-    publish = f"""# 发布判定
-
-章节：{chapter_path.name}
-结论：{publish_verdict}
-说明：{publish_note}
-字符数：{quality.get('char_count', 0)}  段落数：{quality.get('paragraph_count', 0)}
-关键词：{publish_keyword}
-"""
-
+    # 发布结论不在这里写：由 chapter_gate_check.py 根据实际检查结果派生，
+    # 避免「同一个 Agent 自己写可发布、门禁只验关键词」的自证循环。
     paths = [
         ("memory_update.md", memory_update),
         ("consistency_report.md", consistency),
         ("style_calibration.md", style),
         ("copyedit_report.md", copyedit),
-        ("publish_ready.md", publish),
     ]
     written = []
     for name, txt in paths:
@@ -1745,8 +1858,6 @@ def auto_fix_after_gate_failure(
             "consistency_report",
             "style_calibration",
             "copyedit_report",
-            "publish_ready",
-            "publish_ready_keyword",
         ]
     ):
         need_rebuild_gate_artifacts = True
@@ -1766,6 +1877,28 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
     ensure_dir(manuscript_dir)
     flow_dir = project_root / FLOW_DIR_NAME
     ensure_dir(flow_dir)
+
+    # 立项闸口：计划还缺内容就不进写作流程（不建章节桩、不检索、不出写作包）
+    gaps = outline_gaps(project_root)
+    if gaps:
+        outline_task = write_outline_task(project_root, gaps)
+        update_flow_metrics(project_root, {
+            "ts": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "ok": True, "gate_passed_final": False, "runtime_ms": 0,
+            "query_length": 0, "retrieval_context_chars": 0, "retrieval_candidates": 0,
+            "auto_retry_actions_count": 0, "idempotent_hit": False,
+        })
+        return {
+            "ok": True,
+            "command": "continue-write",
+            "project_root": str(project_root),
+            "awaiting_outline": True,
+            "outline_gaps": gaps,
+            "outline_task": str(outline_task),
+            "next_step": (
+                f"立项未完成：{outline_task}。请补齐 00_memory/novel_plan.md 后重跑 /继续写。"
+            ),
+        }
 
     run_id = dt.datetime.now().strftime("%Y%m%d%H%M%S") + f"-{os.getpid()}"
     lock_file = flow_dir / FLOW_LOCK_FILE
@@ -1792,6 +1925,7 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
         }
 
     started_at = time.time()
+
     query = args.query.strip() if args.query else "推进下一章剧情"
     # 节奏模式：同步提升最低字数门槛
     pacing_mode = _resolve_pacing_mode(getattr(args, "pacing_mode", "standard"))
@@ -2322,6 +2456,19 @@ def continue_write(args: argparse.Namespace) -> Dict[str, object]:
 
 def one_click(args: argparse.Namespace) -> Dict[str, object]:
     project_root = Path(args.project_root).expanduser().resolve()
+
+    # 五要素缺一不可：不留装饰性铁律，缺了就拒绝开书（不写任何文件）
+    issues = validate_onboarding(args)
+    if issues:
+        return {
+            "ok": False,
+            "command": "one-click",
+            "project_root": str(project_root),
+            "error": "onboarding_incomplete",
+            "missing": issues,
+            "next_step": "补齐开书五要素后重跑：\n" + onboarding_example(args),
+        }
+
     project_structure(project_root)
     files = init_project_files(project_root, args, overwrite=args.overwrite)
     b_code, b_out, b_err, b_payload = run_python(
@@ -2343,28 +2490,14 @@ def one_click(args: argparse.Namespace) -> Dict[str, object]:
         run_python(
             SCRIPT_DIR / "outline_anchor_manager.py",
             ["init", "--project-root", str(project_root),
-             "--total-chapters-target", str(target_chapters)],
+             "--total-chapters-target", str(target_chapters),
+             "--forbidden-reveals", str(getattr(args, "core_taboo", "") or "")],
         )
         if outline_anchors_file.exists():
             files["changed"].append(str(outline_anchors_file))
 
-    # 将开书前五要素确认信息写入 idea_seed.md（目标读者/写作风格/核心禁区）
-    confirmation_items = [
-        ("目标读者", getattr(args, "target_audience", "")),
-        ("写作风格", getattr(args, "writing_style", "")),
-        ("核心禁区", getattr(args, "core_taboo", "")),
-    ]
-    confirmation_lines = [
-        f"- {label}：{val}" for label, val in confirmation_items if str(val or "").strip()
-    ]
-    if confirmation_lines:
-        idea_seed_file = project_root / "00_memory" / "idea_seed.md"
-        original = read_text(idea_seed_file) if idea_seed_file.exists() else "# 创意种子\n"
-        addition = "\n\n## 开书前确认\n" + "\n".join(confirmation_lines) + "\n"
-        write_text(idea_seed_file, original.rstrip() + addition)
-        if str(idea_seed_file) not in files["changed"]:
-            files["changed"].append(str(idea_seed_file))
-
+    gaps = outline_gaps(project_root)
+    outline_task = write_outline_task(project_root, gaps) if gaps else None
     return {
         "ok": b_code == 0,
         "command": "one-click",
@@ -2372,7 +2505,13 @@ def one_click(args: argparse.Namespace) -> Dict[str, object]:
         "created_or_updated_files": files["changed"],
         "skipped_files": files["skipped"],
         "index_result": b_payload if b_payload is not None else {"stdout": b_out, "stderr": b_err},
-        "next_step": "/继续写",
+        "automation_level": str(getattr(args, "automation_level", "")).strip(),
+        "outline_gaps": gaps,
+        "outline_task": str(outline_task) if outline_task else None,
+        "next_step": (
+            f"立项未完成：{outline_task}。补齐 00_memory/novel_plan.md 后重跑 /继续写。"
+            if gaps else "/继续写"
+        ),
     }
 
 
@@ -2633,15 +2772,19 @@ def parse_args() -> argparse.Namespace:
     p_one.add_argument("--title", default="未命名小说")
     p_one.add_argument("--genre", default="待定题材")
     p_one.add_argument("--idea", default="待补充剧情种子")
-    p_one.add_argument("--protagonist", default="主角")
-    p_one.add_argument("--protagonist-goal", default="明确主角核心目标")
-    p_one.add_argument("--core-conflict", default="主线冲突待细化")
-    p_one.add_argument("--core-hook", default="高概念卖点待补充")
+    p_one.add_argument("--protagonist", default="", help="主角姓名；不给则计划中标为待补全")
+    p_one.add_argument("--protagonist-goal", default="", help="主角核心目标")
+    p_one.add_argument("--core-conflict", default="", help="主线核心冲突")
+    p_one.add_argument("--core-hook", default="", help="一句话核心卖点")
     p_one.add_argument("--ending", default="开放式结局（可后续修改）")
-    p_one.add_argument("--target-words", type=int, default=3000000)
-    p_one.add_argument("--target-audience", default="", help="目标读者群体（如：18-35岁起点男频读者）")
-    p_one.add_argument("--writing-style", default="", help="写作风格（如：爽文快节奏/文艺慢叙事）")
-    p_one.add_argument("--core-taboo", default="", help="核心禁区（如：不写血腥/不写恋童）")
+    p_one.add_argument("--target-words", type=int, default=0,
+                       help="总字数（五要素之一，必填，建议 ≥ 10000）")
+    # 开书五要素：缺一即拒绝开书，见 validate_onboarding()
+    p_one.add_argument("--target-audience", default="", help="五要素·目标读者（如：起点男频 25-35）")
+    p_one.add_argument("--writing-style", default="",
+                       help="五要素·写作风格（" + "/".join(("历史正文", "网文爽文", "文艺", "悬疑推理", "言情细腻")) + "）")
+    p_one.add_argument("--core-taboo", default="", help="五要素·核心禁区（确无则写「无」）")
+    p_one.add_argument("--automation-level", default="", help="五要素·自动化等级（手动/半自动/全自动）")
     p_one.add_argument("--overwrite", action="store_true")
     p_one.add_argument("--emit-json")
 

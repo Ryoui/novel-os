@@ -7,3 +7,7 @@
 *.md text
 *.py text
 *.json text
+
+# PowerShell 安装脚本：保留 CRLF（PS 5.1 对 LF 也能跑，但 CRLF 更贴近 Windows 习惯），
+# 且必须带 UTF-8 BOM —— 见 references/multi-tool-install.md 的 Windows 注意事项。
+*.ps1 text eol=crlf

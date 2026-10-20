@@ -35,7 +35,6 @@ def required_artifacts(gate_dir: Path) -> Dict[str, Path]:
         "consistency_report": gate_dir / "consistency_report.md",
         "style_calibration": gate_dir / "style_calibration.md",
         "copyedit_report": gate_dir / "copyedit_report.md",
-        "publish_ready": gate_dir / "publish_ready.md",
         "quality_report": gate_dir / "quality_report.md",
     }
 
@@ -76,12 +75,43 @@ def check_file(path: Path, min_bytes: int, chapter_mtime: float) -> Tuple[bool, 
     return True, "通过"
 
 
-def check_publish_ready(path: Path, keywords: List[str]) -> Tuple[bool, str]:
-    txt = path.read_text(encoding="utf-8", errors="ignore")
-    for kw in keywords:
-        if kw in txt:
-            return True, f"命中发布关键字: {kw}"
-    return False, "未命中发布关键字（默认要求：可发布/通过/PASS）"
+def derive_publish_verdict(passed: bool, failures: List[str]) -> str:
+    """发布判定由门禁自己派生——不接受 Agent 手写结论。
+
+    结论只取决于本次门禁的全部 failure，和任何自评文件无关。
+    """
+    if passed:
+        return "可发布"
+    return "不可发布"
+
+
+def write_publish_verdict(
+    gate_dir: Path, chapter_path: Path, passed: bool, failures: List[str], warnings: List[str]
+) -> Path:
+    """把派生出的发布结论写进 publish_ready.md（覆盖任何人工/Agent 版本）。"""
+    verdict = derive_publish_verdict(passed, failures)
+    lines = [
+        "# 发布判定（由门禁派生）",
+        "",
+        f"- 章节：{chapter_path.name}",
+        f"- 结论：{verdict}",
+        "- 判定来源：`gate_result.json` 的检查结果（脚本派生，不采信手写结论）",
+        f"- 生成时间：{dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+    ]
+    if failures:
+        lines.append("## 阻断项")
+        lines += [f"- {f}" for f in failures]
+    else:
+        lines.append("## 阻断项")
+        lines.append("- 无")
+    if warnings:
+        lines += ["", "## 提醒（不阻断发布）"]
+        lines += [f"- {w}" for w in warnings]
+    lines.append("")
+    out = gate_dir / "publish_ready.md"
+    out.write_text("\n".join(lines), encoding="utf-8")
+    return out
 
 
 def check_quality_report(path: Path) -> Tuple[bool, str]:
@@ -349,11 +379,6 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--chapter-file", required=True, help="章节文件路径（可相对 project-root）")
     p.add_argument("--chapter-id", help="章节标识；默认从章节文件名推导")
     p.add_argument("--min-bytes", type=int, default=20, help="门禁产物最小字节数")
-    p.add_argument(
-        "--publish-keywords",
-        default="可发布,通过,PASS",
-        help="publish_ready.md 必须命中的关键字，逗号分隔",
-    )
     p.add_argument("--emit-json", help="额外导出 JSON 结果路径")
     p.add_argument("--pacing-tier", choices=["slow", "medium", "fast"],
                    help="当前章预期节奏档位（传入 pacing_tracker check 做预演）")
@@ -433,20 +458,6 @@ def main() -> int:
         result["checks"].append(item)
         if not ok:
             result["failures"].append(f"{name}: {msg}")
-
-    publish_keywords = [k.strip() for k in args.publish_keywords.split(",") if k.strip()]
-    publish_path = artifacts["publish_ready"]
-    if publish_path.exists() and publish_path.stat().st_size >= args.min_bytes:
-        ok, msg = check_publish_ready(publish_path, publish_keywords)
-        item = {
-            "name": "publish_ready_keyword",
-            "path": str(publish_path),
-            "ok": ok,
-            "message": msg,
-        }
-        result["checks"].append(item)
-        if not ok:
-            result["failures"].append(f"publish_ready_keyword: {msg}")
 
     quality_path = artifacts["quality_report"]
     if quality_path.exists() and quality_path.stat().st_size >= args.min_bytes:
@@ -625,6 +636,20 @@ def main() -> int:
         result["failures"].append(f"body_metadata_purity: {_body_msg}")
 
     result["passed"] = len(result["failures"]) == 0
+    result["publish_ready"] = result["passed"]
+    result["publish_blockers"] = list(result["failures"])
+
+    publish_path = write_publish_verdict(
+        gate_dir, chapter_path, result["passed"], result["failures"], result["warnings"]
+    )
+    result["checks"].append(
+        {
+            "name": "publish_verdict",
+            "path": str(publish_path),
+            "ok": result["passed"],
+            "message": derive_publish_verdict(result["passed"], result["failures"]),
+        }
+    )
 
     gate_result = gate_dir / "gate_result.json"
     gate_result.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

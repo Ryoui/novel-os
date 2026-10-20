@@ -50,7 +50,9 @@ class AnchorConfig:
     default_total_chapters: int = 600
     default_total_volumes: int = 10
     default_indent: int = 2
-    default_forbidden_reveals: List[str] = field(default_factory=lambda: ["终极BOSS身份"])
+    # 默认空：禁止揭露项来自开书时的核心禁区（--forbidden-reveals），
+    # 不再硬编码某个题材的专属设定。
+    default_forbidden_reveals: List[str] = field(default_factory=list)
     default_mandatory_tension: str = "至少保留一个未解决冲突进入下一章"
 
 
@@ -179,6 +181,11 @@ def cmd_init(args: argparse.Namespace, cfg: AnchorConfig) -> Dict[str, Any]:
     cur = max(1, args.current_chapter)
     vol = _volume_for_chapter(volumes, cur)
 
+    forbidden = [
+        item.strip()
+        for item in str(getattr(args, "forbidden_reveals", "") or "").split(",")
+        if item.strip()
+    ]
     anchors: Dict[str, Any] = {
         "version": "1.0",
         "updated_at": dt.datetime.now().isoformat(),
@@ -188,7 +195,7 @@ def cmd_init(args: argparse.Namespace, cfg: AnchorConfig) -> Dict[str, Any]:
         "current_volume": int(vol.get("volume", 1)),
         "progress_percent": _progress(cur, total),
         "volumes": volumes,
-        "global_forbidden_reveals": cfg.default_forbidden_reveals,
+        "global_forbidden_reveals": forbidden or cfg.default_forbidden_reveals,
         "mandatory_tension": cfg.default_mandatory_tension,
     }
     anchors["current_node"] = _build_current_node(anchors, cur)
@@ -306,6 +313,8 @@ def parse_args() -> argparse.Namespace:
     s.add_argument("--project-root", required=True)
     s.add_argument("--current-chapter", type=int, default=1)
     s.add_argument("--total-chapters-target", type=int, default=0)
+    s.add_argument("--forbidden-reveals", default="",
+                   help="禁止提前揭露的项，逗号分隔；通常来自开书的核心禁区")
 
     s = sub.add_parser("check", help="检查章节推进范围并输出约束 prompt")
     s.add_argument("--project-root", required=True)

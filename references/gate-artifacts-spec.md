@@ -3,7 +3,7 @@
 每章都必须在以下目录产生产物：`04_editing/gate_artifacts/<chapter_id>/`
 （`<chapter_id>` 由章节文件名 slug 化得到，中文字符保留。）
 
-## 必需产物（6 个 + 1 个发布标记 + 1 个脚本输出）
+## 必需产物（5 个 + 1 个质量 + 1 个发布判定 + 1 个脚本输出）
 
 | # | 文件 | 生成者 | 脚本硬性要求 |
 |---|------|--------|-------------|
@@ -13,7 +13,7 @@
 | 4 | `style_calibration.md` | `/风格校准` | 存在、非空、mtime ≥ 章节文件 |
 | 5 | `copyedit_report.md` | `/校稿` | 同上 |
 | 6 | `quality_report.md` | `continue-write` 自动写入 | 见下方《质量基线判定》 |
-| 7 | `publish_ready.md` | `/校稿` | 必须命中发布关键词 |
+| 7 | `publish_ready.md` | **`/门禁检查` 派生写入** | 不是输入，无通过标准；每次门禁运行按实际结果覆盖重写 |
 | 8 | `gate_result.json` | `/门禁检查` 自动生成 | 脚本输出，`passed: true` 才解锁下一章 |
 
 失败修复文件（门禁失败时生成）：`repair_plan.md`（由 `/修复本章` 生成）。
@@ -39,7 +39,7 @@
 | `chapter_storage_policy` | 章节必须是 `.md`、位于项目目录内、且在 `03_manuscript/` 下 |
 | `knowledge_base_isolation` | `02_knowledge_base/` 下不得出现 `第\d+章*.md` |
 | 6 个必需产物 | 每个 `size >= 20B`（可用 `--min-bytes` 调整）且 `mtime >= 章节文件 mtime` |
-| `publish_ready_keyword` | 命中 `可发布` / `通过` / `PASS` 之一（可用 `--publish-keywords` 调整） |
+| `publish_verdict` | 由 `passed` 派生：通过 → `可发布`，否则 `不可发布`；结论同时写入 `gate_result.json` 的 `publish_ready` / `publish_blockers` 与 `publish_ready.md` |
 | `quality_baseline` | 见下方《质量基线判定》 |
 | `anti_resolution_guard` | 反向刹车校验无 errors（模块不可导入时降级为 warning） |
 | `pacing_tracker` | 节奏档位与 A/B/C 配额无 errors（同上降级） |

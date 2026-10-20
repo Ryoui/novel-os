@@ -88,6 +88,32 @@ SKIP_NARRATION_EXAMPLES: List[str] = [
     "很快便", "就这样过去了", "不知不觉完成", "经过一番激战",
 ]
 
+# Beat 类型 → 场景前提：无 LLM 时也能给出一句可执行的场景方向
+BEAT_TYPE_PREMISES: Dict[str, str] = {
+    "conflict": "由对手先施加压力，主角试探后反制，冲突至少走两个来回",
+    "bond": "用一次具体互动（让步、误解或默契）让两人关系发生可感知的变化",
+    "world_building": "在实地行动中展示环境规则与代价，不做说明书式介绍",
+    "revelation": "先给线索让读者猜测，再给答案，并写出角色的即时反应",
+    "transition": "用可见动作完成场景转换，不省略过程",
+}
+
+BEAT_TYPE_MICRO_CONFLICTS: Dict[str, str] = {
+    "conflict": "谁在阻止谁做什么：本 Beat 的具体对抗点",
+    "bond": "关系上的具体摩擦：一方试探，另一方退让或误解",
+    "world_building": "环境规则与角色行动相撞：想做的事被什么挡住",
+    "revelation": "线索之间的误导：先指向错的人或错的方向",
+    "transition": "过渡中的阻力：离开或抵达都不是顺手的",
+}
+
+BEAT_TYPE_EMOTION_ARCS: Dict[str, str] = {
+    "conflict": "紧张 → 受挫 → 稳住阵脚",
+    "bond": "防备 → 松动 → 短暂靠近",
+    "world_building": "警觉 → 试探 → 心里有数",
+    "revelation": "疑惑 → 震动 → 重新判断",
+    "transition": "疲惫 → 犹豫 → 决意",
+}
+
+
 # -- 配置 ------------------------------------------------------------------
 
 @dataclass
@@ -119,15 +145,44 @@ def _load_anchors(root: Path, cfg: BeatConfig) -> Dict[str, Any]:
     return load_json(root / cfg.anchor_rel_path, default={})
 
 
-def _default_beat(beat_id: int, beat_type: str, summary: str) -> Dict[str, Any]:
+def _scene_summary(
+    beat_id: int, beat_total: int, beat_type: str, chapter_goal: str
+) -> str:
+    """按章节目标 + Beat 类型 + 位置派生一句可读的场景概要。
+
+    CLI 拿不到模型，但"场景概要为空骨架"会让写作包和扩写提示都变成占位文档；
+    这里用类型模板给出可直接执行的方向，写作者据此展开具体场景。
+    """
+    type_cn = BEAT_TYPES.get(beat_type, "推进")
+    premise = BEAT_TYPE_PREMISES.get(beat_type, "推进本章目标的一个具体场景")
+    goal = (chapter_goal or "").strip().replace("\n", " ")
+    goal = goal[:60] if goal else "本章主线目标"
+
+    if beat_total > 1 and beat_id == 1:
+        position = "开场：先把当前处境与压力落到具体场景里"
+    elif beat_total > 1 and beat_id == beat_total:
+        position = "收束：把本 Beat 的结果推到章末，并留下具体悬念"
+    else:
+        position = "承接上一 Beat 的结果继续推进"
+
+    return f"{type_cn}｜围绕「{goal}」——{premise}；{position}"
+
+
+def _default_beat(
+    beat_id: int,
+    beat_type: str,
+    summary: str,
+    micro_conflict: str = "",
+    emotion_target: str = "",
+) -> Dict[str, Any]:
     return {
         "beat_id": beat_id,
         "type": beat_type,
         "summary": summary,
         "characters": [],
         "location": "",
-        "micro_conflict": "",
-        "emotion_target": "",
+        "micro_conflict": micro_conflict,
+        "emotion_target": emotion_target,
         "word_target": 800,
         "anti_resolution": beat_type == "conflict",
     }
@@ -203,7 +258,14 @@ def cmd_generate(args: argparse.Namespace, cfg: BeatConfig) -> Dict[str, Any]:
     word_per_beat = max(cfg.word_target_range[0], chapter_word_target // beat_count)
     beats: List[Dict[str, Any]] = []
     for i in range(beat_count):
-        beat = _default_beat(i + 1, beat_types[i], f"[待填充] Beat {i + 1} 场景概要")
+        beat_type = beat_types[i]
+        beat = _default_beat(
+            i + 1,
+            beat_type,
+            _scene_summary(i + 1, beat_count, beat_type, args.chapter_goal),
+            micro_conflict=BEAT_TYPE_MICRO_CONFLICTS.get(beat_type, ""),
+            emotion_target=BEAT_TYPE_EMOTION_ARCS.get(beat_type, ""),
+        )
         beat["word_target"] = word_per_beat
         beat["pacing_depth"] = pacing_depth
         beats.append(beat)
@@ -257,8 +319,8 @@ def cmd_expand(args: argparse.Namespace, cfg: BeatConfig) -> Dict[str, Any]:
 
     beat_type_cn = BEAT_TYPES.get(target_beat.get("type", ""), "未知")
     beat_type_key = target_beat.get("type", "")
-    characters = "、".join(target_beat.get("characters", [])) or "待定"
-    location = target_beat.get("location", "待定")
+    characters = "、".join(target_beat.get("characters", [])) or "未指定（按本章目标确定）"
+    location = (target_beat.get("location") or "").strip() or "未指定（写作时按场景确定）"
     word_target = target_beat.get("word_target", 800)
     anti_res = target_beat.get("anti_resolution", False)
     # 节奏模式优先级：命令行参数 > beat 字段 > sheet 字段 > 默认

@@ -65,8 +65,10 @@ python3 scripts/auto_novel_writer.py report --project-root <目录>
 # 章节写作（多LLM支持）
 python3 scripts/novel_chapter_writer.py --project-root <目录> --provider kimi --dry-run
 
-# 跨工具安装
+# 跨工具安装（macOS/Linux）
 bash scripts/install-portable-skill.sh --tool claude-code --force
+# 跨工具安装（Windows / PowerShell）
+powershell -ExecutionPolicy Bypass -File scripts/install-portable-skill.ps1 -Tool claude-code -Force
 ```
 
 ## 代码架构
@@ -136,7 +138,7 @@ assets/style_library/       # 全局风格库（style_fingerprint.py 读写）
     pacing_review.md        # 节奏审查结论（节奏审查: 通过）
     style_calibration.md
     copyedit_report.md
-    publish_ready.md
+    publish_ready.md        # 门禁派生的发布结论（每次重写）
     quality_report.md       # 段落去重指标（通过：True）
     gate_result.json        # passed=true 才能进入下一章
     repair_plan.md          # 失败时生成
@@ -152,7 +154,7 @@ assets/style_library/       # 全局风格库（style_fingerprint.py 读写）
 2. `/检查一致性` → `consistency_report.md`
 3. `/节奏审查` → `pacing_review.md`（须含 `节奏审查: 通过`）
 4. `/风格校准` → `style_calibration.md`
-5. `/校稿` → `copyedit_report.md` + `publish_ready.md`
+5. `/校稿` → `copyedit_report.md`（发布结论由门禁派生，不在本步产生）
 6. `/门禁检查` → `gate_result.json`（`passed=true` 才解锁下一章）
 
 ⚠️ `quality_report.md` 也是硬性产物，由 `continue-write` 自动写入；手动走流程时必须自行生成。完整判定规则见 `references/gate-artifacts-spec.md`。

@@ -46,7 +46,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--init-if-needed", action="store_true", default=True)
     p.add_argument("--title", default="评测样书")
     p.add_argument("--genre", default="悬疑")
-    p.add_argument("--idea", default="主角在旧港区发现失踪名单")
+    p.add_argument("--idea", default="陈砚在旧港区发现失踪名单")
+    # 开书五要素（CLI 已强制校验，评测默认给一组合法值）
+    p.add_argument("--target-audience", default="起点男频 25-35")
+    p.add_argument("--writing-style", default="悬疑推理")
+    p.add_argument("--core-taboo", default="不写真实案件改编")
+    p.add_argument("--automation-level", default="半自动")
+    p.add_argument("--target-words", type=int, default=1000000)
     p.add_argument("--force-run", action="store_true", help="评测时强制执行，忽略幂等缓存")
     p.add_argument("--emit-json")
     return p.parse_args()
@@ -74,6 +80,15 @@ def main() -> int:
             args.genre,
             "--idea",
             args.idea,
+            "--target-audience", args.target_audience,
+            "--writing-style", args.writing_style,
+            "--core-taboo", args.core_taboo,
+            "--automation-level", args.automation_level,
+            "--target-words", str(args.target_words),
+            "--protagonist", "陈砚",
+            "--protagonist-goal", "查清三年前的旧案",
+            "--core-conflict", "失踪名单背后的旧案",
+            "--core-hook", "一张名单牵出三条人命",
         ])
 
     runs = []

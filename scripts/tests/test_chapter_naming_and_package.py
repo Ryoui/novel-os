@@ -40,7 +40,22 @@ def _write_pacing_review(project_root: Path, chapter: Path) -> None:
     )
 
 
+_ONBOARDING_ARGS = [
+    "--target-audience", "起点男频 25-35",
+    "--writing-style", "悬疑推理",
+    "--core-taboo", "不写真实案件改编",
+    "--automation-level", "半自动",
+    "--target-words", "1000000",
+    "--protagonist", "陈砚",
+    "--protagonist-goal", "查清三年前的旧案",
+    "--core-conflict", "失踪名单背后的旧案",
+    "--core-hook", "一张名单牵出三条人命",
+]
+
+
 def run(*args):
+    if args and args[0] == "one-click" and "--target-audience" not in args:
+        args = (*args, *_ONBOARDING_ARGS)
     p = subprocess.run([sys.executable, str(EXECUTOR), *args],
                        capture_output=True, text=True, encoding="utf-8")
     return json.loads(p.stdout)
