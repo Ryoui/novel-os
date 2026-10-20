@@ -161,12 +161,9 @@ function Write-Manifest {
 function Install-ClaudeAgents {
     param([string]$SourceRoot, [bool]$Overwrite)
 
-    # agents/ 是中性目录；.claude/agents 仅为旧布局兜底
+    # agents/ 是中性目录（编辑团队角色定义），claude-code 装到 ~/.claude/agents/
     $agentsSrc = Join-Path $SourceRoot "agents"
-    if (-not (Test-Path $agentsSrc)) {
-        $legacySrc = Join-Path $SourceRoot ".claude\agents"
-        if (Test-Path $legacySrc) { $agentsSrc = $legacySrc } else { return }
-    }
+    if (-not (Test-Path $agentsSrc)) { return }
 
     $agentsDest = Join-Path $HOME ".claude\agents"
     if (-not (Test-Path $agentsDest)) { New-Item -ItemType Directory -Path $agentsDest -Force | Out-Null }

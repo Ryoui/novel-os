@@ -362,7 +362,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--global-library",
         default=default_global_library(),
-        help="全局风格库存储目录（默认依次尝试 $NOVEL_OS_STYLE_LIBRARY、~/.claude/skills/novel-os/assets/style_library、仓库 assets/style_library）",
+        help="全局风格库存储目录（默认依次尝试 $NOVEL_OS_STYLE_LIBRARY、~/.claude/skills/novel-os/assets/style_library、技能内 assets/style_library）",
     )
     parser.add_argument("--top-n", type=int, default=12, help="高频短语数量")
     parser.add_argument("--emit-json", help="额外导出 JSON 结果路径")

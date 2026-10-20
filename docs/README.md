@@ -634,7 +634,7 @@ local_api_url: "http://localhost:11434/api/generate"
 ## 常见问题
 
 ### Q: 安装后命令不生效？
-A: 确认安装脚本输出无错误。重启AI工具后重试。检查SKILL.md是否被正确链接。
+A: 确认安装脚本输出无错误。重启AI工具后重试。检查 `novel-os/SKILL.md` 是否被正确链接。
 
 ### Q: 门禁一直不通过？
 A: 使用 `/修复本章` 自动修复。查看 `04_editing/gate_artifacts/<章节>/gate_result.json` 了解具体失败原因。
@@ -663,24 +663,24 @@ A: 内置调研维度的题材：历史、玄幻、科幻、都市、仙侠、�
 
 | 文档 | 内容 |
 |------|------|
-| `references/user-guide.md` | 从零开书用户指南 |
-| `references/command-playbook.md` | 完整命令手册 |
-| `references/gate-artifacts-spec.md` | 门禁产物规范 |
-| `references/million-word-roadmap.md` | 百万字路线图 |
-| `references/genre-style-matrix.md` | 题材风格矩阵 |
-| `references/rag-consistency-design.md` | RAG一致性设计 |
-| `references/story-graph-schema.md` | 知识图谱数据结构 |
-| `references/outline-anchor-quota-spec.md` | 大纲锚点规范 |
-| `references/beat-pipeline-spec.md` | 多步流水线写作 |
-| `references/anti-resolution-cooldown-spec.md` | 反向刹车与事件冷却 |
-| `references/cross-agent-review-protocol.md` | 跨Agent审核协议 |
-| `references/editorial-team-protocol.md` | 编辑团队架构与协议 |
-| `references/humanizer-guide.md` | 去AI味润色指南 |
-| `references/research-guide.md` | 联网调研指南 |
-| `references/auto-write-guide.md` | 一键写书指南 |
-| `references/interactive-brainstorming-playbook.md` | 交互式脑洞引导流程 |
-| `references/adaptation-workflow.md` | 仿写与魔改工作流 |
-| `references/multi-tool-install.md` | 多工具安装说明 |
+| `novel-os/references/user-guide.md` | 从零开书用户指南 |
+| `novel-os/references/command-playbook.md` | 完整命令手册 |
+| `novel-os/references/gate-artifacts-spec.md` | 门禁产物规范 |
+| `novel-os/references/million-word-roadmap.md` | 百万字路线图 |
+| `novel-os/references/genre-style-matrix.md` | 题材风格矩阵 |
+| `novel-os/references/rag-consistency-design.md` | RAG一致性设计 |
+| `novel-os/references/story-graph-schema.md` | 知识图谱数据结构 |
+| `novel-os/references/outline-anchor-quota-spec.md` | 大纲锚点规范 |
+| `novel-os/references/beat-pipeline-spec.md` | 多步流水线写作 |
+| `novel-os/references/anti-resolution-cooldown-spec.md` | 反向刹车与事件冷却 |
+| `novel-os/references/cross-agent-review-protocol.md` | 跨Agent审核协议 |
+| `novel-os/references/editorial-team-protocol.md` | 编辑团队架构与协议 |
+| `novel-os/references/humanizer-guide.md` | 去AI味润色指南 |
+| `novel-os/references/research-guide.md` | 联网调研指南 |
+| `novel-os/references/auto-write-guide.md` | 一键写书指南 |
+| `novel-os/references/interactive-brainstorming-playbook.md` | 交互式脑洞引导流程 |
+| `novel-os/references/adaptation-workflow.md` | 仿写与魔改工作流 |
+| `novel-os/references/multi-tool-install.md` | 多工具安装说明 |
 
 ---
 

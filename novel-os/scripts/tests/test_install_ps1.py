@@ -20,7 +20,6 @@ import unittest
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
-REPO = SCRIPT_DIR.parent
 PS1 = SCRIPT_DIR / "install-portable-skill.ps1"
 SH = SCRIPT_DIR / "install-portable-skill.sh"
 

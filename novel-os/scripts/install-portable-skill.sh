@@ -121,8 +121,7 @@ copy_core() {
 install_claude_agents() {
   local agents_src="$SRC_DIR/agents"
   if [[ ! -d "$agents_src" ]]; then
-    local legacy_src="$SRC_DIR/.claude/agents"
-    [[ -d "$legacy_src" ]] && agents_src="$legacy_src" || return 0
+    return 0
   fi
 
   local agents_dest="$HOME/.claude/agents"

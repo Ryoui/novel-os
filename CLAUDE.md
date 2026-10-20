@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **技能定义**：`novel-os/SKILL.md`（v2.0.0 主文档，作为 Claude Code 等 AI 工具的 skill 安装使用）
 - **真实执行器**：`novel-os/scripts/` 目录下的 Python 脚本，承担门禁校验、RAG 检索、联网调研、多LLM写作、流程编排等硬逻辑
 - **小说项目数据**：写作时在用户机器的 `<project-root>/` 下生成（不在本仓库内）
-- **人类可读说明**：`docs/README.md`（`SKILL.md` 与它分工不同，前者给 AI，后者给人）
+- **人类可读说明**：`docs/README.md`（`novel-os/SKILL.md` 与它分工不同，前者给 AI，后者给人）
 
 ## 常用命令
 
@@ -69,7 +69,7 @@ python3 novel-os/scripts/novel_chapter_writer.py --project-root <目录> --provi
 # 跨工具安装（macOS/Linux）
 bash novel-os/scripts/install-portable-skill.sh --tool claude-code --force
 # 跨工具安装（Windows / PowerShell）
-powershell -ExecutionPolicy Bypass -File scripts/install-portable-skill.ps1 -Tool claude-code -Force
+powershell -ExecutionPolicy Bypass -File novel-os/scripts/install-portable-skill.ps1 -Tool claude-code -Force
 ```
 
 ## 代码架构
@@ -158,7 +158,7 @@ novel_writer_config.template.yaml
 5. `/校稿` → `copyedit_report.md`（发布结论由门禁派生，不在本步产生）
 6. `/门禁检查` → `gate_result.json`（`passed=true` 才解锁下一章）
 
-⚠️ `quality_report.md` 也是硬性产物，由 `continue-write` 自动写入；手动走流程时必须自行生成。完整判定规则见 `references/gate-artifacts-spec.md`。
+⚠️ `quality_report.md` 也是硬性产物，由 `continue-write` 自动写入；手动走流程时必须自行生成。完整判定规则见 `novel-os/references/gate-artifacts-spec.md`。
 
 **两级 RAG 检索**（`plot_rag_retriever.py`）：
 - 条件触发：轻场景（日常/过渡）自动跳过检索
@@ -196,5 +196,5 @@ novel_writer_config.template.yaml
 
 ## 技能安装说明
 
-本仓库同时是一个 Claude Code skill。`SKILL.md` 作为 skill 文件，安装后在对话中触发 `/一键开书`、`/继续写` 等命令。安装脚本支持 Claude Code、Codex、OpenCode、Gemini CLI、Antigravity 五个工具。
+本仓库同时是一个 Claude Code skill。`novel-os/SKILL.md` 作为 skill 文件，安装后在对话中触发 `/一键开书`、`/继续写` 等命令。安装脚本支持 Claude Code、Codex、OpenCode、Gemini CLI、Antigravity 五个工具。
 ```
