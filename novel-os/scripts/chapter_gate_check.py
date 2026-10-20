@@ -13,13 +13,13 @@ import types
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from common import slugify
-from config import QualityConfig
-
 # 确保同目录脚本可直接 import
 _SCRIPT_DIR = Path(__file__).parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
+
+from common import slugify
+from config import QualityConfig
 
 
 def resolve_chapter(project_root: Path, chapter_file: str) -> Path:

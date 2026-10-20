@@ -10,9 +10,15 @@ import datetime as dt
 import hashlib
 import json
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Tuple
+
+# 确保同目录脚本可直接 import
+_SCRIPT_DIR = Path(__file__).parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
 from common import (
     ensure_dir, read_text, slugify, chapter_no_from_name, normalize_text,

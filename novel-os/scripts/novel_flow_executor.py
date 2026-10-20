@@ -22,6 +22,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, cast
 
+# 确保同目录脚本可直接 import
+_SCRIPT_DIR = Path(__file__).parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
 from common import (
     ensure_dir, read_text, write_text, slugify,
     sha1_text, file_sha1, load_json, save_json,

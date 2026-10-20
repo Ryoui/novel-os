@@ -7,8 +7,14 @@
 import argparse
 import datetime as dt
 import json
+import sys
 from pathlib import Path
 from typing import Dict, List
+
+# 确保同目录脚本可直接 import
+_SCRIPT_DIR = Path(__file__).parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
 from common import slugify
 
